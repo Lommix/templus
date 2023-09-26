@@ -1,0 +1,44 @@
+{% define "base" %}
+	{% block content %}
+	<html>
+		{{ content }}
+	</html
+	{% end %}
+{% end %}
+
+{% define "main" extends "base" %}
+	{% block content %}
+	{# testing comments_1 #}
+		{% include "include_test" with name="Click me", color="red" %}
+		{% include "for_test" with list=[1,2,3] %}
+		{% include "if_test" with is_admin=true %}
+	{% end %}
+{% end %}
+
+{% define "for_test" %}
+	{% for item in list %}
+		<p>{{ item }}</p>
+	{% end %}
+{% end %}
+
+{# testing comments_2 #}
+{% define "var_test" %}
+	{% set name="test" %}
+	<p>{{ name }}</p>
+{% end %}
+
+{% define "if_test" %}
+	{% if is_admin %}
+		<p>Admin</p>
+	{% else %}
+		<p>User</p>
+	{% endif %}
+{% end %}
+
+{% define "pipe_test" %}
+	<p>{{ timestamp|date }}</p>
+{% end %}
+
+{% define "include_test" %}
+<button style="color:{{ button_color }};">{{ button_name }}</button>
+{% end %}

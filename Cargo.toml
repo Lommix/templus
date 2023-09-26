@@ -1,0 +1,13 @@
+[workspace]
+members = ["templus"]
+exclude = ["examples/README.md"]
+resolver = "2"
+
+[profile.release]
+debug = true
+
+[profile.dev.package.insta]
+opt-level = 3
+
+[profile.dev.package.similar]
+opt-level = 3
