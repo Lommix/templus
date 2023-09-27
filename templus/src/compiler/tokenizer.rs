@@ -1,4 +1,5 @@
-use super::error::TemplusCompilerError;
+use super::error::TemplusError;
+
 
 
 #[derive(Debug)]
@@ -41,7 +42,7 @@ impl<'a> Tokenizer<'a> {
 }
 
 impl <'a> Iterator for Tokenizer<'a> {
-    type Item = Result<BlockSpan<'a>, TemplusCompilerError>;
+    type Item = Result<BlockSpan<'a>, TemplusError>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset >= self.code.len() {
             return None;
@@ -75,7 +76,7 @@ impl <'a> Iterator for Tokenizer<'a> {
         let (end_type, next_end) = match find_next_end(self.code, self.offset) {
             Some((end_type, next_end)) => (end_type, next_end),
             None => {
-                return Some(Err(TemplusCompilerError::UnclosedBlock(format!(
+                return Some(Err(TemplusError::UnclosedBlock(format!(
                     "{:?}",
                     start_type
                 ))))

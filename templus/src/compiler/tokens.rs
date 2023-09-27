@@ -1,5 +1,8 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Token {
+    /// Comment Token
+    Comment,
+    /// Html Token
     Html,
     /// Var Token
     Var,
