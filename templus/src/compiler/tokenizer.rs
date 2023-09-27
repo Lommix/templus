@@ -1,36 +1,34 @@
+use super::error::TemplusCompilerError;
+
+
 #[derive(Debug)]
-enum BlockType {
+pub(crate) enum BlockType {
     Variable,
     Comment,
-    Block,
+    Code,
     Html,
 }
 
 #[derive(Debug)]
-pub struct BlockSpan {
+pub struct BlockSpan<'a> {
     start: usize,
     end: usize,
+    code: &'a [u8],
     block_type: BlockType,
 }
 
-#[derive(Debug)]
-pub enum TokenizerError {
-    InvalidSyntax,
-    UnclosedBlock(String),
-}
-
-impl std::fmt::Display for TokenizerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+impl <'a> BlockSpan<'a> {
+    pub(crate) fn code(&self) -> &'a str {
+        std::str::from_utf8(self.code).unwrap().trim()
+    }
+    pub(crate) fn block_type(&self) -> &BlockType {
+        &self.block_type
     }
 }
 
-impl std::error::Error for TokenizerError {
-    fn description(&self) -> &str {
-        "Syntax error"
-    }
-}
 
+/// The Tokenizer
+/// takes raw byte sequence and splits it into meta tokens @[BlockType]
 pub struct Tokenizer<'a> {
     code: &'a [u8],
     offset: usize,
@@ -42,8 +40,8 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-impl Iterator for Tokenizer<'_> {
-    type Item = Result<BlockSpan, TokenizerError>;
+impl <'a> Iterator for Tokenizer<'a> {
+    type Item = Result<BlockSpan<'a>, TemplusCompilerError>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset >= self.code.len() {
             return None;
@@ -53,6 +51,7 @@ impl Iterator for Tokenizer<'_> {
             Some((block_type, next_start)) => (block_type, next_start),
             None => {
                 let r = Some(Ok(BlockSpan {
+                    code: &self.code[self.offset..],
                     start: self.offset,
                     end: self.code.len(),
                     block_type: BlockType::Html,
@@ -64,6 +63,7 @@ impl Iterator for Tokenizer<'_> {
 
         if next_start > 0 {
             let span = BlockSpan {
+                code: &self.code[self.offset..(self.offset + next_start)],
                 start: self.offset,
                 end: self.offset + next_start,
                 block_type: BlockType::Html,
@@ -75,14 +75,20 @@ impl Iterator for Tokenizer<'_> {
         let (end_type, next_end) = match find_next_end(self.code, self.offset) {
             Some((end_type, next_end)) => (end_type, next_end),
             None => {
-                return Some(Err(TokenizerError::UnclosedBlock(format!(
+                return Some(Err(TemplusCompilerError::UnclosedBlock(format!(
                     "{:?}",
                     start_type
                 ))))
             }
         };
 
+
+        let block_start = self.offset;
+        let block_end = self.offset + next_end + 1;
+        let code = &self.code[block_start + 2 ..block_end - 2];
+
         let block = Some(Ok(BlockSpan {
+            code,
             start: self.offset,
             end: self.offset + next_end + 1,
             block_type: start_type,
@@ -126,7 +132,7 @@ fn find_next_start(code: &[u8], offset: usize) -> Option<(BlockType, usize)> {
 
         match code.get(offset + idx + local_offset + 1) {
             Some(b'{') => return Some((BlockType::Variable, idx + local_offset)),
-            Some(b'%') => return Some((BlockType::Block, idx + local_offset)),
+            Some(b'%') => return Some((BlockType::Code, idx + local_offset)),
             Some(b'#') => return Some((BlockType::Comment, idx + local_offset)),
             _ => match offset + idx + local_offset >= code.len() {
                 true => return None,
@@ -146,7 +152,7 @@ fn find_next_end(code: &[u8], offset: usize) -> Option<(BlockType, usize)> {
 
         match code.get(offset + idx + local_offset - 1) {
             Some(b'}') => return Some((BlockType::Variable, idx + local_offset)),
-            Some(b'%') => return Some((BlockType::Block, idx + local_offset)),
+            Some(b'%') => return Some((BlockType::Code, idx + local_offset)),
             Some(b'#') => return Some((BlockType::Comment, idx + local_offset)),
             _ => match offset + idx + local_offset >= code.len() {
                 true => return None,
@@ -183,6 +189,7 @@ mod tests {
 
     #[test]
     fn test_tokenizer_iterator() {
+        // let tmpl = std::fs::read_to_string("test_templates/1.html").unwrap();
         let tmpl = "<html>{% block 'html' %}<p>Hello</p>{% end %}{% block js %}<script>alert('{{ foo }}')</script>{% end %}</html>";
         let mut tokenizer = Tokenizer::new(tmpl.as_bytes());
         let mut timeout = 0;
@@ -191,11 +198,11 @@ mod tests {
                 None => break,
                 Some(token) => {
                     let t = token.expect("Invalid token");
-                    println!("{:?} :: {:?}", t.block_type, &tmpl[t.start..t.end]);
+                    // println!("{:?} :: {:?}", t.block_type, std::str::from_utf8(t.code).unwrap() );
                 }
             }
             timeout += 1;
-            if timeout > 20 {
+            if timeout > 100 {
                 break;
             }
         }

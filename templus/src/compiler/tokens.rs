@@ -1,14 +1,16 @@
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Token {
+    Html,
     /// Var Token
     Var,
     /// Static
     Const,
     /// Define Token "define"
     Define,
-    /// Exends Token "extends"
-    Exends,
-    /// Include Token "include"
-    Include,
+    /// Exends Token "extend"
+    Extend,
+    /// Include Token "import"
+    Import,
     /// In Token "in"
     In,
     /// Comment Token "set"
@@ -49,14 +51,6 @@ pub(crate) enum Token {
     Or,
     // comma ","
     Comma,
-    // comment open "{#"
-    CommentOpen,
-    // comment close "#}"
-    CommentClose,
-    // bracket open "{%"
-    BracketOpen,
-    // bracket close "%}"
-    BracketClose,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
