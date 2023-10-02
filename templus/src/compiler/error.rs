@@ -1,25 +1,24 @@
+use super::lexer::Span;
+
 #[derive(Debug)]
 pub enum TemplusError {
-    UnclosedBlock(String),
+    UnclosedBlock(Span),
     InvalidSyntax,
-    InvalidToken(String),
-    InvalidExpression(String),
+    InvalidToken(Span),
+    InvalidExpression(Span),
 }
+
+impl std::error::Error for TemplusError {}
+
 
 impl std::fmt::Display for TemplusError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl std::error::Error for TemplusError {
-    fn description(&self) -> &str {
         match self {
-            TemplusError::UnclosedBlock(at) => "unclosed block at {}",
-            TemplusError::InvalidToken(token) => "invalid token {}",
-            TemplusError::InvalidExpression(expr) => "invalid expression {}",
-            TemplusError::InvalidSyntax => "invalid syntax",
-            _ => "unknown error",
+            TemplusError::UnclosedBlock(at) => write!(f, "Unclosed block at {:?}", at),
+            TemplusError::InvalidToken(token) => write!(f, "Invalid token {:?}", token),
+            TemplusError::InvalidExpression(expr) => write!(f, "Invalid expression {:?}", expr),
+            TemplusError::InvalidSyntax => write!(f, "Invalid syntax"),
         }
     }
 }
+

@@ -1,39 +1,25 @@
-use std::iter::Peekable;
-
 use super::{error::TemplusError, tokens::Token};
 
 #[derive(Debug)]
-pub struct TokenSpan<'a> {
-    token: Token,
-    code: &'a [u8],
-    line: usize,
-}
-
-impl std::fmt::Display for TokenSpan<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?}::({}) ->`{}`",
-            self.token,
-            self.line,
-            String::from_utf8_lossy(self.code)
-        )
-    }
+pub struct Span {
+    current_line: usize,
+    current_column: usize,
+    current_offset: usize,
 }
 
 #[derive(Debug, Default)]
-enum LexerState {
+enum LexerState<'a> {
     #[default]
     InHtml,
-    InCode,
+    InCode(&'a str),
 }
 
 #[derive(Debug, Default)]
-pub struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
     code: &'a [u8],
     cursor: usize,
     line_cursor: usize,
-    state: LexerState,
+    state: LexerState<'a>,
 }
 
 impl<'a> Lexer<'a> {
@@ -58,114 +44,143 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn peek(&self) -> Option<TokenSpan<'a>> {
-        None
+    fn loc(&self) -> Span {
+        Span {
+            current_line: self.line_cursor,
+            current_column: self.cursor - self.line_cursor,
+            current_offset: self.cursor,
+        }
     }
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = TokenSpan<'a>;
+    type Item = Result<(Token<'a>, Span), TemplusError>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.cursor >= self.code.len() {
             return None;
         }
         match self.state {
             LexerState::InHtml => {
-                // we are in html
                 // find the next punctuation
-                let (start, lines_passed) = match next_punctuation_start(&self.code[self.cursor..]) {
+                let (start, lines_passed) = match next_block_start(&self.code[self.cursor..]) {
                     Some((offset, lines)) => (offset, lines),
                     None => {
-                        let span = TokenSpan {
-                            token: Token::Html,
-                            code: (&self.code[self.cursor..self.code.len()]).trim(),
-                            line: self.line_cursor,
-                        };
+                        let code = (&self.code[self.cursor..self.code.len()]).trim();
+                        let token = Token::Template(std::str::from_utf8(code).unwrap());
+                        let span = self.loc();
 
                         self.cursor = self.code.len();
-                        return Some(span);
+                        return Some(Ok((token, span)));
                     }
                 };
 
                 self.line_cursor += lines_passed;
 
                 // we found html
+                // is it all whitespace?
                 if start > 0 {
-                    let span = TokenSpan {
-                        token: Token::Html,
-                        code: (&self.code[self.cursor..self.cursor + start]).trim(),
-                        line: self.line_cursor,
-                    };
-                    self.cursor += start;
-                    return Some(span);
+                    if is_whitespace_only(&self.code[self.cursor..self.cursor + start]) {
+                        self.cursor += start;
+                    } else {
+                        let code = (&self.code[self.cursor..self.cursor + start]).trim();
+                        let token = Token::Template(std::str::from_utf8(code).unwrap());
+                        let span = self.loc();
+                        self.cursor += start;
+                        return Some(Ok((token, span)));
+                    }
                 }
 
-                let end_cursor = self.cursor + start + 2;
-                let span = TokenSpan {
-                    token: Token::Punctuation,
-                    code: (&self.code[self.cursor..end_cursor]).trim(),
-                    line: self.line_cursor,
+                // we are at the start of a code block
+                // skip block start
+                self.cursor += 2;
+
+                // find code block end
+                let (end, lines_passed) = match next_block_end(&self.code[self.cursor..]) {
+                    Some((offset, lines)) => (offset, lines),
+                    None => return Some(Err(TemplusError::UnclosedBlock(self.loc()))),
                 };
+
+                let code = &self.code[self.cursor..self.cursor + end];
+                let block_start_span = self.loc();
 
                 self.line_cursor += lines_passed;
-                self.cursor = end_cursor;
-                self.state = LexerState::InCode;
-                Some(span)
+                self.cursor += end + 2;
+
+                self.state = LexerState::InCode(std::str::from_utf8(code).unwrap().trim());
+                Some(Ok((Token::BlockStart, block_start_span)))
             }
-            LexerState::InCode => {
-
-                let (end,lines) = next_punctuation_end(&self.code[self.cursor..]).unwrap();
-
-                let span = TokenSpan {
-                    token: Token::Expression,
-                    code: (&self.code[self.cursor..self.cursor + end]).trim(),
-                    line: self.line_cursor,
-                };
-
-                self.state = LexerState::InHtml;
-                self.cursor += end;
-                Some(span)
-            }
-        }
-    }
-}
-
-/// finds the next punctuation start, returns char offset and line offset
-fn next_punctuation_start(code: &[u8]) -> Option<(usize, usize)> {
-    let mut local_offset = 0;
-    loop {
-        let (idx, lines) = match skip_to_with_lines(&code[local_offset..], b'{') {
-            Some((idx, lines)) => (idx, lines),
-            None => return None,
-        };
-
-        match code.get(idx + local_offset + 1) {
-            Some(b'{') => return Some((idx + local_offset, lines)),
-            _ => match idx + local_offset >= code.len() {
-                true => return None,
-                false => local_offset += idx.max(1),
+            // (Ident(" define 'base'"), Span { current_line: 0, current_column: 26, current_offset: 26 })
+            LexerState::InCode(code_buffer) => match code_buffer.find(" ") {
+                Some(offset) => {
+                    self.state = LexerState::InCode((&code_buffer[offset..]).trim());
+                    Some(Ok((
+                        Token::Ident(code_buffer),
+                        self.loc(),
+                    )))
+                }
+                None => {
+                    self.state = LexerState::InHtml;
+                    Some(Ok((Token::BlockEnd, self.loc())))
+                }
             },
         }
     }
 }
 
-/// finds the next punctuation end, returns char offset and line offset
-fn next_punctuation_end(code: &[u8]) -> Option<(usize, usize)> {
+fn next_block_start(code: &[u8]) -> Option<(usize, usize)> {
     let mut local_offset = 0;
+    let mut lines_passed = 0;
     loop {
-        let (idx, lines) = match skip_to_with_lines(&code[local_offset..], b'}') {
-            Some((idx, lines)) => (idx, lines),
-            None => return None,
-        };
+        if local_offset >= code.len() {
+            return None;
+        }
 
-        match code.get(idx + local_offset - 1) {
-            Some(b'}') => return Some((idx + local_offset, lines)),
-            _ => match idx + local_offset >= code.len() {
-                true => return None,
-                false => local_offset += idx.max(1),
-            },
+        match code.get(local_offset..local_offset + 2) {
+            Some(b"{{") => return Some((local_offset, lines_passed)),
+            _ => local_offset += 1,
+        }
+
+        if let Some(b'\n') = code.get(local_offset) {
+            lines_passed += 1;
         }
     }
+}
+
+fn next_block_end(code: &[u8]) -> Option<(usize, usize)> {
+    let mut local_offset = 0;
+    let mut lines_passed = 0;
+    loop {
+        if local_offset >= code.len() {
+            return None;
+        }
+        match code.get(local_offset..local_offset + 2) {
+            Some(b"}}") => return Some((local_offset, lines_passed)),
+            _ => local_offset += 1,
+        }
+
+        if let Some(b'\n') = code.get(local_offset) {
+            lines_passed += 1;
+        }
+    }
+}
+
+/// returns next ident or block end
+fn next_ident(code: &[u8]) -> Option<usize> {
+    let mut offset = 0;
+    loop {
+        if offset >= code.len() {
+            return None;
+        }
+        if let Some(b' ') = code.get(offset) {
+            return Some(offset);
+        }
+
+        offset += 1;
+    }
+}
+
+fn is_whitespace_only(code: &[u8]) -> bool {
+    code.iter().all(|&x| x == b' ' || x == b'\t' || x == b'\n')
 }
 
 /// returns the offset of the first occurrence of needle
@@ -200,9 +215,7 @@ impl Trim for &[u8] {
             if start_offset >= self.len() {
                 break;
             }
-            if self[start_offset] != b' '
-                || self[start_offset] != b'\t'
-                || self[start_offset] != b'\n'
+            if self[start_offset] != b' ' && self[start_offset] != b'\t' && self[start_offset] != b'\n'
             {
                 break;
             }
@@ -223,25 +236,32 @@ impl Trim for &[u8] {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{next_punctuation_start, Lexer};
 
-    #[test]
-    fn test_lexing() {
-        let tmpl = "<html> {{ define 'base' }} {{ import 'test' }} {{ end }} <h2>{{ .Title }}</h2> {{ if true }} <p>hello</p> {{ end }} </html> {{ define 'test '}} <p>test</p> {{ end }}";
+#[test]
+fn test_lexing() {
+    let tmpl = "<html> {{ define 'base' }} {{ import 'test' }} {{ end }} <h2>{{ .Title }}</h2> {{ if true }} <p>hello</p> {{ end }} </html> {{ define 'test '}} <p>test</p> {{ end }}";
 
-        let lexer = Lexer::new(tmpl.as_bytes());
-        lexer.for_each(|token| println!("{}", token));
+    println!("{}", tmpl);
+    println!("-----------------------------------------------------------");
+
+    let mut timeout = 0;
+    let lexer = Lexer::new(tmpl.as_bytes());
+    for token in lexer {
+        println!("{:?}", token.unwrap());
+        timeout += 1;
+        if timeout > 30 {
+            break;
+        }
     }
-
-    #[test]
-    fn find() {
-        let tmpl = "01234{{test}}";
-        let (offset, line) = next_punctuation_start(tmpl.as_bytes()).unwrap();
-        assert_eq!(offset, 5);
-    }
-
-    #[test]
-    fn test_token_fail() {}
+    // lexer.for_each(|token| println!("{:?}", token.unwrap()));
 }
+
+#[test]
+fn find() {
+    let tmpl = "01234{{test}}";
+    let (offset, line) = next_block_start(tmpl.as_bytes()).unwrap();
+    assert_eq!(offset, 5);
+}
+
+#[test]
+fn test_token_fail() {}

@@ -1,14 +1,22 @@
 #[derive(Debug)]
-pub(crate) enum Token {
-    Operator,
-    Expression,
-    Variable,
-    Literal,
-    Keyword,
-    Statement,
-    Html,
-    Comment,
-    Punctuation,
+pub(crate) enum Token<'a> {
+
+    Template(&'a str),
+    Literal(&'a str),
+    Ident(&'a str),
+
+    Var,        // .
+    Eq,         // ==
+    Neq,        // !=
+    Gte,        // >=
+    Gt,         // >
+    Lte,        // <=
+    Lt,         // <
+    And,        // &&
+    Or,         // ||
+    Assign,     // =
+    BlockStart, // {{
+    BlockEnd,   // }}
 }
 
 #[derive(Debug)]
