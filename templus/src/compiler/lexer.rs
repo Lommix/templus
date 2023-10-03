@@ -123,25 +123,42 @@ impl<'a> Iterator for Lexer<'a> {
                     let offset = code_buffer[1..].find("'").unwrap_or(code_buffer.len());
                     let literal = &code_buffer[1..offset + 1];
 
-                    self.state = LexerState::InCode(code_buffer[offset + 2 ..].trim());
+                    self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
                     return Some(Ok((Token::Literal(&literal), self.loc())));
                 }
 
+                // string literal starting with "
+                if code_buffer.starts_with('"') {
+                    let offset = code_buffer[1..].find('"').unwrap_or(code_buffer.len());
+                    let literal = &code_buffer[1..offset + 1];
+
+                    self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
+                    return Some(Ok((Token::Literal(&literal), self.loc())));
+                }
+
+                // number literals, no floats
+                if let Some((num,rest)) = split_after_numeric(code_buffer){
+                    self.state = LexerState::InCode(rest.trim());
+                    return Some(Ok((Token::Literal(&num), self.loc())));
+                }
+
                 match code_buffer.split_once(' ') {
+                    // handle expressions
+                    // todo
                     Some((s, rest)) => {
                         self.state = LexerState::InCode(rest.trim());
-
                         let token = match Token::try_from_str(s) {
                             Some(token) => token,
                             None => Token::Ident(s),
                         };
-
                         Some(Ok((token, self.loc())))
                     }
-
                     None => {
                         if code_buffer.len() > 0 {
-                            let token = Token::Ident(code_buffer);
+                            let token = match Token::try_from_str(code_buffer) {
+                                Some(token) => token,
+                                None => Token::Ident(code_buffer),
+                            };
                             let span = self.loc();
                             self.state = LexerState::InCode("");
                             return Some(Ok((token, span)));
@@ -191,40 +208,28 @@ fn next_block_end(code: &[u8]) -> Option<(usize, usize)> {
     }
 }
 
-/// returns next ident or block end
-fn next_ident(code: &[u8]) -> Option<usize> {
-    let mut offset = 0;
-    loop {
-        if offset >= code.len() {
-            return None;
-        }
-        if let Some(b' ') = code.get(offset) {
-            return Some(offset);
-        }
-
-        offset += 1;
-    }
-}
-
 fn is_whitespace_only(code: &[u8]) -> bool {
     code.iter().all(|&x| x == b' ' || x == b'\t' || x == b'\n')
 }
 
-/// returns the offset of the first occurrence of needle
-fn skip_to(haystack: &[u8], needle: u8) -> Option<usize> {
-    haystack.iter().position(|&x| x == needle)
+fn split_after_numeric(code: &str) -> Option<(&str, &str)> {
+    let mut offset = 0;
+    //get first char
+    if !code.chars().nth(0)?.is_numeric(){
+        return None;
+    }
+
+    while let Some(c) = code.chars().nth(offset) {
+        if !c.is_numeric() {
+            break;
+        }
+        offset += 1;
+    }
+    Some(code.split_at(offset))
 }
 
-/// returns offset and lines passed to needle in haystack
-fn skip_to_with_lines(haystack: &[u8], needle: u8) -> Option<(usize, usize)> {
-    let mut lines = 0;
-    let offset = haystack.iter().position(|&x| {
-        lines += if x == b'\n' { 1 } else { 0 };
-        return x == needle;
-    })?;
 
-    Some((offset, lines))
-}
+
 
 trait Trim {
     fn trim(&self) -> Self;
@@ -265,32 +270,116 @@ impl Trim for &[u8] {
     }
 }
 
-#[test]
-fn test_lexing() {
-    let tmpl = "<html> {{ define 'base' }} {{ import 'test' }} {{ end }} <h2>{{ .Title }}</h2> {{ if .login=true }} <p>hello</p> {{ end }} </html> {{ define 'test '}} <p>test</p> {{ end }}";
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    println!("{}", tmpl);
-    println!("-----------------------------------------------------------");
+    #[test]
+    fn lex_num_split() {
+        let code ="123fsd fdsf";
+        let (a,b) = split_after_numeric(code).unwrap();
+        assert_eq!(a,"123");
+        assert_eq!(b,"fsd fdsf");
 
-    let mut timeout = 0;
-    let lexer = Lexer::new(tmpl.as_bytes());
-    for token in lexer {
-        println!("{:?}", token.unwrap());
-        timeout += 1;
-        println!("--------------");
-        if timeout > 30 {
-            break;
-        }
+        let code = "sdf hello wotld";
+        assert!(split_after_numeric(code).is_none());
     }
-    // lexer.for_each(|token| println!("{:?}", token.unwrap()));
-}
 
-#[test]
-fn find() {
-    let tmpl = "01234{{test}}";
-    let (offset, line) = next_block_start(tmpl.as_bytes()).unwrap();
-    assert_eq!(offset, 5);
-}
+    #[test]
+    fn lex_if() {
+        let tmpl = "{{ if .loggedIn && .role == 'admin' }} <p>Hello</p> {{ end }}";
+        let lexer = Lexer::new(tmpl.as_bytes());
+        let expected = vec![
+            Token::BlockStart,
+            Token::If,
+            Token::Ident("loggedIn"),
+            Token::And,
+            Token::Ident("role"),
+            Token::Eq,
+            Token::Literal("admin"),
+            Token::BlockEnd,
+            Token::Template("<p>Hello</p>"),
+            Token::BlockStart,
+            Token::End,
+            Token::BlockEnd,
+        ];
+        lexer.zip(expected).for_each(|(a, b)| {
+            let (t, s) = a.unwrap();
+            assert_eq!(t, b);
+        });
+    }
 
-#[test]
-fn test_token_fail() {}
+    #[test]
+    fn lex_define_import_extend() {
+        let tmpl = "{{ define 'base' }}{{ import 'test' }}{{ extend 'test'}}";
+        let lexer = Lexer::new(tmpl.as_bytes());
+        let expected = vec![
+            Token::BlockStart,
+            Token::Define,
+            Token::Literal("base"),
+            Token::BlockEnd,
+            Token::BlockStart,
+            Token::Import,
+            Token::Literal("test"),
+            Token::BlockEnd,
+            Token::BlockStart,
+            Token::Extend,
+            Token::Literal("test"),
+            Token::BlockEnd,
+        ];
+        lexer.zip(expected).for_each(|(a, b)| {
+            let (t, s) = a.unwrap();
+            assert_eq!(t, b);
+        });
+    }
+
+    #[test]
+    fn lex_range() {
+        let tmpl = "{{ range .users }}{{ .name }}{{ end }}";
+        let lexer = Lexer::new(tmpl.as_bytes());
+        let expected = vec![
+            Token::BlockStart,
+            Token::Range,
+            Token::Ident("users"),
+            Token::BlockEnd,
+            Token::BlockStart,
+            Token::Ident("name"),
+            Token::BlockEnd,
+            Token::BlockStart,
+            Token::End,
+            Token::BlockEnd,
+        ];
+        lexer.zip(expected).for_each(|(a, b)| {
+            let (t, s) = a.unwrap();
+            assert_eq!(t, b);
+        })
+    }
+
+    #[test]
+    fn lex_operator() {
+        let tmpl = "{{ if .loggedIn && .role == 'admin' || .id >= 100 }} <p>Hello</p> {{ end }}";
+        let lexer = Lexer::new(tmpl.as_bytes());
+        let expected = vec![
+            Token::BlockStart,
+            Token::If,
+            Token::Ident("loggedIn"),
+            Token::And,
+            Token::Ident("role"),
+            Token::Eq,
+            Token::Literal("admin"),
+            Token::Or,
+            Token::Ident("id"),
+            Token::Gte,
+            Token::Literal("100"),
+            Token::BlockEnd,
+            Token::Template("<p>Hello</p>"),
+            Token::BlockStart,
+            Token::End,
+            Token::BlockEnd,
+        ];
+        lexer.zip(expected).for_each(|(a, b)| {
+            let (t, s) = a.unwrap();
+            assert_eq!(t, b);
+        })
+    }
+}

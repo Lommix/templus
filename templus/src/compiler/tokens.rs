@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Token<'a> {
     Template(&'a str),
     Literal(&'a str),
@@ -9,6 +9,7 @@ pub(crate) enum Token<'a> {
     Import,
     Range,
     If,
+    Else,
     End,
     Set,
 
@@ -32,10 +33,12 @@ impl<'a> Token<'a> {
             "extend" => Some(Token::Extend),
             "import" => Some(Token::Import),
             "range" => Some(Token::Range),
+            "else" => Some(Token::Else),
             "if" => Some(Token::If),
             "end" => Some(Token::End),
             "set" => Some(Token::Set),
-            "=" => Some(Token::Eq),
+            "=" => Some(Token::Assign),
+            "==" => Some(Token::Eq),
             "!=" => Some(Token::Neq),
             ">=" => Some(Token::Gte),
             ">" => Some(Token::Gt),
