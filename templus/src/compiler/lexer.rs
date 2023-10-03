@@ -109,20 +109,48 @@ impl<'a> Iterator for Lexer<'a> {
                 self.state = LexerState::InCode(std::str::from_utf8(code).unwrap().trim());
                 Some(Ok((Token::BlockStart, block_start_span)))
             }
-            // (Ident(" define 'base'"), Span { current_line: 0, current_column: 26, current_offset: 26 })
-            LexerState::InCode(code_buffer) => match code_buffer.find(" ") {
-                Some(offset) => {
-                    self.state = LexerState::InCode((&code_buffer[offset..]).trim());
-                    Some(Ok((
-                        Token::Ident(code_buffer),
-                        self.loc(),
-                    )))
+            LexerState::InCode(code_buffer) => {
+                // is var?
+                if code_buffer.starts_with(".") {
+                    let offset = code_buffer.find(' ').unwrap_or(code_buffer.len());
+                    let var = &code_buffer[1..offset];
+                    self.state = LexerState::InCode(code_buffer[offset..].trim());
+                    return Some(Ok((Token::Ident(var), self.loc())));
                 }
-                None => {
-                    self.state = LexerState::InHtml;
-                    Some(Ok((Token::BlockEnd, self.loc())))
+
+                // string literal starting with '
+                if code_buffer.starts_with("'") {
+                    let offset = code_buffer[1..].find("'").unwrap_or(code_buffer.len());
+                    let literal = &code_buffer[1..offset + 1];
+
+                    self.state = LexerState::InCode(code_buffer[offset + 2 ..].trim());
+                    return Some(Ok((Token::Literal(&literal), self.loc())));
                 }
-            },
+
+                match code_buffer.split_once(' ') {
+                    Some((s, rest)) => {
+                        self.state = LexerState::InCode(rest.trim());
+
+                        let token = match Token::try_from_str(s) {
+                            Some(token) => token,
+                            None => Token::Ident(s),
+                        };
+
+                        Some(Ok((token, self.loc())))
+                    }
+
+                    None => {
+                        if code_buffer.len() > 0 {
+                            let token = Token::Ident(code_buffer);
+                            let span = self.loc();
+                            self.state = LexerState::InCode("");
+                            return Some(Ok((token, span)));
+                        }
+                        self.state = LexerState::InHtml;
+                        Some(Ok((Token::BlockEnd, self.loc())))
+                    }
+                }
+            }
         }
     }
 }
@@ -157,7 +185,6 @@ fn next_block_end(code: &[u8]) -> Option<(usize, usize)> {
             Some(b"}}") => return Some((local_offset, lines_passed)),
             _ => local_offset += 1,
         }
-
         if let Some(b'\n') = code.get(local_offset) {
             lines_passed += 1;
         }
@@ -215,7 +242,9 @@ impl Trim for &[u8] {
             if start_offset >= self.len() {
                 break;
             }
-            if self[start_offset] != b' ' && self[start_offset] != b'\t' && self[start_offset] != b'\n'
+            if self[start_offset] != b' '
+                && self[start_offset] != b'\t'
+                && self[start_offset] != b'\n'
             {
                 break;
             }
@@ -236,10 +265,9 @@ impl Trim for &[u8] {
     }
 }
 
-
 #[test]
 fn test_lexing() {
-    let tmpl = "<html> {{ define 'base' }} {{ import 'test' }} {{ end }} <h2>{{ .Title }}</h2> {{ if true }} <p>hello</p> {{ end }} </html> {{ define 'test '}} <p>test</p> {{ end }}";
+    let tmpl = "<html> {{ define 'base' }} {{ import 'test' }} {{ end }} <h2>{{ .Title }}</h2> {{ if .login=true }} <p>hello</p> {{ end }} </html> {{ define 'test '}} <p>test</p> {{ end }}";
 
     println!("{}", tmpl);
     println!("-----------------------------------------------------------");
@@ -249,6 +277,7 @@ fn test_lexing() {
     for token in lexer {
         println!("{:?}", token.unwrap());
         timeout += 1;
+        println!("--------------");
         if timeout > 30 {
             break;
         }
