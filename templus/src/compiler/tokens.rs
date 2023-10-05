@@ -2,12 +2,13 @@
 pub(crate) enum Token<'a> {
     Template(&'a str),
     Literal(&'a str),
-    Ident(&'a str),
+    Var(&'a str),
 
     Define,
     Extend,
     Import,
     Range,
+    Block,
     If,
     Else,
     End,
@@ -22,8 +23,8 @@ pub(crate) enum Token<'a> {
     And,        // &&
     Or,         // ||
     Assign,     // =
-    BlockStart, // {{
-    BlockEnd,   // }}
+    CodeStart, // {{
+    CodeEnd,   // }}
 }
 
 impl<'a> Token<'a> {
@@ -31,6 +32,7 @@ impl<'a> Token<'a> {
         match str {
             "define" => Some(Token::Define),
             "extend" => Some(Token::Extend),
+            "block" => Some(Token::Block),
             "import" => Some(Token::Import),
             "range" => Some(Token::Range),
             "else" => Some(Token::Else),

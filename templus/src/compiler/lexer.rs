@@ -107,7 +107,7 @@ impl<'a> Iterator for Lexer<'a> {
                 self.cursor += end + 2;
 
                 self.state = LexerState::InCode(std::str::from_utf8(code).unwrap().trim());
-                Some(Ok((Token::BlockStart, block_start_span)))
+                Some(Ok((Token::CodeStart, block_start_span)))
             }
             LexerState::InCode(code_buffer) => {
                 // is var?
@@ -115,7 +115,7 @@ impl<'a> Iterator for Lexer<'a> {
                     let offset = code_buffer.find(' ').unwrap_or(code_buffer.len());
                     let var = &code_buffer[1..offset];
                     self.state = LexerState::InCode(code_buffer[offset..].trim());
-                    return Some(Ok((Token::Ident(var), self.loc())));
+                    return Some(Ok((Token::Var(var), self.loc())));
                 }
 
                 // string literal starting with '
@@ -137,11 +137,12 @@ impl<'a> Iterator for Lexer<'a> {
                 }
 
                 // number literals, no floats
-                if let Some((num,rest)) = split_after_numeric(code_buffer){
+                if let Some((num, rest)) = split_after_numeric(code_buffer) {
                     self.state = LexerState::InCode(rest.trim());
                     return Some(Ok((Token::Literal(&num), self.loc())));
                 }
 
+                //todo: refactor like top
                 match code_buffer.split_once(' ') {
                     // handle expressions
                     // todo
@@ -149,7 +150,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.state = LexerState::InCode(rest.trim());
                         let token = match Token::try_from_str(s) {
                             Some(token) => token,
-                            None => Token::Ident(s),
+                            None => Token::Var(s),
                         };
                         Some(Ok((token, self.loc())))
                     }
@@ -157,14 +158,14 @@ impl<'a> Iterator for Lexer<'a> {
                         if code_buffer.len() > 0 {
                             let token = match Token::try_from_str(code_buffer) {
                                 Some(token) => token,
-                                None => Token::Ident(code_buffer),
+                                None => Token::Var(code_buffer),
                             };
                             let span = self.loc();
                             self.state = LexerState::InCode("");
                             return Some(Ok((token, span)));
                         }
                         self.state = LexerState::InHtml;
-                        Some(Ok((Token::BlockEnd, self.loc())))
+                        Some(Ok((Token::CodeEnd, self.loc())))
                     }
                 }
             }
@@ -215,7 +216,7 @@ fn is_whitespace_only(code: &[u8]) -> bool {
 fn split_after_numeric(code: &str) -> Option<(&str, &str)> {
     let mut offset = 0;
     //get first char
-    if !code.chars().nth(0)?.is_numeric(){
+    if !code.chars().nth(0)?.is_numeric() {
         return None;
     }
 
@@ -227,9 +228,6 @@ fn split_after_numeric(code: &str) -> Option<(&str, &str)> {
     }
     Some(code.split_at(offset))
 }
-
-
-
 
 trait Trim {
     fn trim(&self) -> Self;
@@ -276,10 +274,10 @@ mod tests {
 
     #[test]
     fn lex_num_split() {
-        let code ="123fsd fdsf";
-        let (a,b) = split_after_numeric(code).unwrap();
-        assert_eq!(a,"123");
-        assert_eq!(b,"fsd fdsf");
+        let code = "123fsd fdsf";
+        let (a, b) = split_after_numeric(code).unwrap();
+        assert_eq!(a, "123");
+        assert_eq!(b, "fsd fdsf");
 
         let code = "sdf hello wotld";
         assert!(split_after_numeric(code).is_none());
@@ -290,18 +288,18 @@ mod tests {
         let tmpl = "{{ if .loggedIn && .role == 'admin' }} <p>Hello</p> {{ end }}";
         let lexer = Lexer::new(tmpl.as_bytes());
         let expected = vec![
-            Token::BlockStart,
+            Token::CodeStart,
             Token::If,
-            Token::Ident("loggedIn"),
+            Token::Var("loggedIn"),
             Token::And,
-            Token::Ident("role"),
+            Token::Var("role"),
             Token::Eq,
             Token::Literal("admin"),
-            Token::BlockEnd,
+            Token::CodeEnd,
             Token::Template("<p>Hello</p>"),
-            Token::BlockStart,
+            Token::CodeStart,
             Token::End,
-            Token::BlockEnd,
+            Token::CodeEnd,
         ];
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
@@ -314,18 +312,18 @@ mod tests {
         let tmpl = "{{ define 'base' }}{{ import 'test' }}{{ extend 'test'}}";
         let lexer = Lexer::new(tmpl.as_bytes());
         let expected = vec![
-            Token::BlockStart,
+            Token::CodeStart,
             Token::Define,
             Token::Literal("base"),
-            Token::BlockEnd,
-            Token::BlockStart,
+            Token::CodeEnd,
+            Token::CodeStart,
             Token::Import,
             Token::Literal("test"),
-            Token::BlockEnd,
-            Token::BlockStart,
+            Token::CodeEnd,
+            Token::CodeStart,
             Token::Extend,
             Token::Literal("test"),
-            Token::BlockEnd,
+            Token::CodeEnd,
         ];
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
@@ -338,16 +336,16 @@ mod tests {
         let tmpl = "{{ range .users }}{{ .name }}{{ end }}";
         let lexer = Lexer::new(tmpl.as_bytes());
         let expected = vec![
-            Token::BlockStart,
+            Token::CodeStart,
             Token::Range,
-            Token::Ident("users"),
-            Token::BlockEnd,
-            Token::BlockStart,
-            Token::Ident("name"),
-            Token::BlockEnd,
-            Token::BlockStart,
+            Token::Var("users"),
+            Token::CodeEnd,
+            Token::CodeStart,
+            Token::Var("name"),
+            Token::CodeEnd,
+            Token::CodeStart,
             Token::End,
-            Token::BlockEnd,
+            Token::CodeEnd,
         ];
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
@@ -357,25 +355,29 @@ mod tests {
 
     #[test]
     fn lex_operator() {
-        let tmpl = "{{ if .loggedIn && .role == 'admin' || .id >= 100 }} <p>Hello</p> {{ end }}";
+        let tmpl = "{{block 'test'}}{{ if .loggedIn && .role == 'admin' || .id >= 100 }} <p>Hello</p> {{ end }}{{ end }}";
         let lexer = Lexer::new(tmpl.as_bytes());
         let expected = vec![
-            Token::BlockStart,
+            Token::CodeStart,
+            Token::Block,
+            Token::Literal("test"),
+            Token::CodeEnd,
+            Token::CodeStart,
             Token::If,
-            Token::Ident("loggedIn"),
+            Token::Var("loggedIn"),
             Token::And,
-            Token::Ident("role"),
+            Token::Var("role"),
             Token::Eq,
             Token::Literal("admin"),
             Token::Or,
-            Token::Ident("id"),
+            Token::Var("id"),
             Token::Gte,
             Token::Literal("100"),
-            Token::BlockEnd,
+            Token::CodeEnd,
             Token::Template("<p>Hello</p>"),
-            Token::BlockStart,
+            Token::CodeStart,
             Token::End,
-            Token::BlockEnd,
+            Token::CodeEnd,
         ];
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
