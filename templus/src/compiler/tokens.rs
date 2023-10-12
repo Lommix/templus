@@ -5,7 +5,7 @@ pub(crate) enum Token<'a> {
     Var(&'a str),
 
     Define,
-    Extend,
+    Extends,
     Import,
     Range,
     Block,
@@ -31,7 +31,7 @@ impl<'a> Token<'a> {
     pub fn try_from_str(str: &'a str) -> Option<Self> {
         match str {
             "define" => Some(Token::Define),
-            "extend" => Some(Token::Extend),
+            "extends" => Some(Token::Extends),
             "block" => Some(Token::Block),
             "import" => Some(Token::Import),
             "range" => Some(Token::Range),
@@ -51,4 +51,29 @@ impl<'a> Token<'a> {
             _ => None,
         }
     }
+
+    pub fn try_from_bslice(bslice: &'a [u8]) -> Option<Self> {
+        match bslice {
+            b"define" => Some(Token::Define),
+            b"extends" => Some(Token::Extends),
+            b"block" => Some(Token::Block),
+            b"import" => Some(Token::Import),
+            b"range" => Some(Token::Range),
+            b"else" => Some(Token::Else),
+            b"if" => Some(Token::If),
+            b"end" => Some(Token::End),
+            b"set" => Some(Token::Set),
+            b"=" => Some(Token::Assign),
+            b"==" => Some(Token::Eq),
+            b"!=" => Some(Token::Neq),
+            b">=" => Some(Token::Gte),
+            b">" => Some(Token::Gt),
+            b"<=" => Some(Token::Lte),
+            b"<" => Some(Token::Lt),
+            b"&&" => Some(Token::And),
+            b"||" => Some(Token::Or),
+            _ => None,
+        }
+    }
 }
+

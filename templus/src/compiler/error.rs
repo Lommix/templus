@@ -6,6 +6,8 @@ pub enum TemplusError {
     InvalidSyntax,
     InvalidToken(Span),
     InvalidExpression(Span),
+    ParserError((String,Span)),
+    LexerError((String,Span)),
 }
 
 impl std::error::Error for TemplusError {}
@@ -18,6 +20,8 @@ impl std::fmt::Display for TemplusError {
             TemplusError::InvalidToken(token) => write!(f, "Invalid token {:?}", token),
             TemplusError::InvalidExpression(expr) => write!(f, "Invalid expression {:?}", expr),
             TemplusError::InvalidSyntax => write!(f, "Invalid syntax"),
+            TemplusError::ParserError((msg, at)) => write!(f, "Parser error: {} -- at: {}", msg, at),
+            TemplusError::LexerError((msg, at)) => write!(f, "Lexer error: {} -- at: {}", msg, at),
         }
     }
 }

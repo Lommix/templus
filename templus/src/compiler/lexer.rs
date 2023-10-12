@@ -7,11 +7,17 @@ pub struct Span {
     current_offset: usize,
 }
 
+impl std::fmt::Display for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.current_line, self.current_column)
+    }
+}
+
 #[derive(Debug, Default)]
-enum LexerState<'a> {
+enum LexerState {
     #[default]
     InHtml,
-    InCode(&'a str),
+    InCode,
 }
 
 #[derive(Debug, Default)]
@@ -19,7 +25,7 @@ pub(crate) struct Lexer<'a> {
     code: &'a [u8],
     cursor: usize,
     line_cursor: usize,
-    state: LexerState<'a>,
+    state: LexerState,
 }
 
 impl<'a> Lexer<'a> {
@@ -65,7 +71,7 @@ impl<'a> Iterator for Lexer<'a> {
                 let (start, lines_passed) = match next_block_start(&self.code[self.cursor..]) {
                     Some((offset, lines)) => (offset, lines),
                     None => {
-                        let code = (&self.code[self.cursor..self.code.len()]).trim();
+                        let code = btrim(&self.code[self.cursor..self.code.len()]);
                         let token = Token::Template(std::str::from_utf8(code).unwrap());
                         let span = self.loc();
 
@@ -82,7 +88,7 @@ impl<'a> Iterator for Lexer<'a> {
                     if is_whitespace_only(&self.code[self.cursor..self.cursor + start]) {
                         self.cursor += start;
                     } else {
-                        let code = (&self.code[self.cursor..self.cursor + start]).trim();
+                        let code = btrim(&self.code[self.cursor..self.cursor + start]);
                         let token = Token::Template(std::str::from_utf8(code).unwrap());
                         let span = self.loc();
                         self.cursor += start;
@@ -94,81 +100,162 @@ impl<'a> Iterator for Lexer<'a> {
                 // skip block start
                 self.cursor += 2;
 
-                // find code block end
-                let (end, lines_passed) = match next_block_end(&self.code[self.cursor..]) {
-                    Some((offset, lines)) => (offset, lines),
-                    None => return Some(Err(TemplusError::UnclosedBlock(self.loc()))),
-                };
-
-                let code = &self.code[self.cursor..self.cursor + end];
+                let code = &self.code[self.cursor..];
                 let block_start_span = self.loc();
 
-                self.line_cursor += lines_passed;
-                self.cursor += end + 2;
+                // self.line_cursor += lines_passed;
+                // self.cursor += end + 2;
 
-                self.state = LexerState::InCode(std::str::from_utf8(code).unwrap().trim());
+                self.state = LexerState::InCode;
                 Some(Ok((Token::CodeStart, block_start_span)))
             }
-            LexerState::InCode(code_buffer) => {
-                // is var?
-                if code_buffer.starts_with(".") {
-                    let offset = code_buffer.find(' ').unwrap_or(code_buffer.len());
-                    let var = &code_buffer[1..offset];
-                    self.state = LexerState::InCode(code_buffer[offset..].trim());
-                    return Some(Ok((Token::Var(var), self.loc())));
+            LexerState::InCode => {
+                self.skip_whitespace();
+
+                if self.cursor >= self.code.len() {
+                    return None;
                 }
 
-                // string literal starting with '
-                if code_buffer.starts_with("'") {
-                    let offset = code_buffer[1..].find("'").unwrap_or(code_buffer.len());
-                    let literal = &code_buffer[1..offset + 1];
-
-                    self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
-                    return Some(Ok((Token::Literal(&literal), self.loc())));
+                if &self.code[self.cursor..self.cursor + 2] == b"}}" {
+                    self.state = LexerState::InHtml;
+                    self.cursor += 2;
+                    return Some(Ok((Token::CodeEnd, self.loc())));
                 }
 
-                // string literal starting with "
-                if code_buffer.starts_with('"') {
-                    let offset = code_buffer[1..].find('"').unwrap_or(code_buffer.len());
-                    let literal = &code_buffer[1..offset + 1];
+                match &self.code[self.cursor] {
+                    // string literal
+                    b'"' | b'\'' => {
+                        let offset =
+                            offset_to_delimiter(&self.code[self.cursor..], self.code[self.cursor])
+                                .expect("EOF lol");
+                        let literal =
+                            std::str::from_utf8(&self.code[self.cursor..self.cursor + offset])
+                                .unwrap();
 
-                    self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
-                    return Some(Ok((Token::Literal(&literal), self.loc())));
-                }
-
-                // number literals, no floats
-                if let Some((num, rest)) = split_after_numeric(code_buffer) {
-                    self.state = LexerState::InCode(rest.trim());
-                    return Some(Ok((Token::Literal(&num), self.loc())));
-                }
-
-                //todo: refactor like top
-                match code_buffer.split_once(' ') {
-                    // handle expressions
-                    // todo
-                    Some((s, rest)) => {
-                        self.state = LexerState::InCode(rest.trim());
-                        let token = match Token::try_from_str(s) {
-                            Some(token) => token,
-                            None => Token::Var(s),
-                        };
-                        Some(Ok((token, self.loc())))
+                        println!("literal: {:?}", literal);
+                        self.cursor += offset + 1;
+                        return Some(Ok((Token::Literal(literal), self.loc())));
                     }
-                    None => {
-                        if code_buffer.len() > 0 {
-                            let token = match Token::try_from_str(code_buffer) {
-                                Some(token) => token,
-                                None => Token::Var(code_buffer),
-                            };
-                            let span = self.loc();
-                            self.state = LexerState::InCode("");
-                            return Some(Ok((token, span)));
-                        }
-                        self.state = LexerState::InHtml;
-                        Some(Ok((Token::CodeEnd, self.loc())))
+                    // number literal
+                    b'0'..=b'9' => {
+                        let offset =
+                            offset_to_number_end(&self.code[self.cursor..]).expect("EOF lol");
+                        let number =
+                            std::str::from_utf8(&self.code[self.cursor..self.cursor + offset])
+                                .unwrap();
+                        self.cursor += offset;
+                        return Some(Ok((Token::Literal(number), self.loc())));
+                    }
+                    // var ident
+                    b'.' => {
+                        self.cursor += 1;
+                        let offset =
+                            offset_to_delimiter(&self.code[self.cursor..], b' ').expect("EOF lol");
+                        let ident =
+                            std::str::from_utf8(&self.code[self.cursor..self.cursor + offset])
+                                .unwrap();
+                        self.cursor += offset;
+                        return Some(Ok((Token::Var(ident), self.loc())));
+                    }
+                    // ident token
+                    _ => {
+                        let offset =
+                            offset_to_delimiter(&self.code[self.cursor..], b' ').expect("EOF lol");
+
+                        let ident = &self.code[self.cursor..self.cursor + offset];
+                        self.cursor += offset;
+                        let token = Token::try_from_bslice(ident)
+                            .expect(&format!("failed at {:?}", std::str::from_utf8(ident)));
+                        return Some(Ok((token, self.loc())));
                     }
                 }
+
+                // // is var?
+                // if code_buffer.starts_with(".") {
+                //     let offset = code_buffer.find(' ').unwrap_or(code_buffer.len());
+                //     let var = &code_buffer[1..offset];
+                //     self.state = LexerState::InCode(code_buffer[offset..].trim());
+                //     return Some(Ok((Token::Var(var), self.loc())));
+                // }
+                //
+                // // string literal starting with '
+                // if code_buffer.starts_with("'") {
+                //     let offset = code_buffer[1..].find("'").unwrap_or(code_buffer.len());
+                //     let literal = &code_buffer[1..offset + 1];
+                //
+                //     self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
+                //     return Some(Ok((Token::Literal(&literal), self.loc())));
+                // }
+                //
+                // // string literal starting with "
+                // if code_buffer.starts_with('"') {
+                //     let offset = code_buffer[1..].find('"').unwrap_or(code_buffer.len());
+                //     let literal = &code_buffer[1..offset + 1];
+                //
+                //     self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
+                //     return Some(Ok((Token::Literal(&literal), self.loc())));
+                // }
+                //
+                // // number literals, no floats
+                // if let Some((num, rest)) = split_after_numeric(code_buffer) {
+                //     self.state = LexerState::InCode(rest.trim());
+                //     return Some(Ok((Token::Literal(&num), self.loc())));
+                // }
+                //
+                // //todo: refactor like top
+                // match code_buffer.split_once(' ') {
+                //     // handle expressions
+                //     // todo
+                //     Some((s, rest)) => {
+                //         self.state = LexerState::InCode(rest.trim());
+                //         let token = match Token::try_from_str(s) {
+                //             Some(token) => token,
+                //             None => panic!("failed at {}", s),
+                //         };
+                //         Some(Ok((token, self.loc())))
+                //     }
+                //     None => {
+                //         if code_buffer.len() > 0 {
+                //             let token = match Token::try_from_str(code_buffer) {
+                //                 Some(token) => token,
+                //                 None => Token::Var(code_buffer),
+                //             };
+                //             let span = self.loc();
+                //             self.state = LexerState::InCode("");
+                //             return Some(Ok((token, span)));
+                //         }
+                //         self.state = LexerState::InHtml;
+                //         Some(Ok((Token::CodeEnd, self.loc())))
+                //     }
+                // }
             }
+        }
+    }
+}
+
+fn offset_to_delimiter(code: &[u8], delimiter: u8) -> Option<usize> {
+    let mut offset = 0;
+    loop {
+        if offset >= code.len() {
+            return None;
+        }
+        if Some(&delimiter) == code.get(offset) {
+            return Some(offset);
+        }
+        offset += 1;
+    }
+}
+
+fn offset_to_number_end(code: &[u8]) -> Option<usize> {
+    let mut offset = 0;
+    loop {
+        if offset >= code.len() {
+            return None;
+        }
+        if let Some(b'0'..=b'9') = code.get(offset) {
+            offset += 1;
+        } else {
+            return Some(offset);
         }
     }
 }
@@ -229,43 +316,37 @@ fn split_after_numeric(code: &str) -> Option<(&str, &str)> {
     Some(code.split_at(offset))
 }
 
-trait Trim {
-    fn trim(&self) -> Self;
-}
+fn btrim(input: &[u8]) -> &[u8] {
+    if input.is_empty() {
+        return input;
+    }
+    let mut start_offset = 0;
+    let mut end_offset = input.len() - 1;
 
-impl Trim for &[u8] {
-    fn trim(&self) -> Self {
-        if self.is_empty() {
-            return self;
-        }
-        let mut start_offset = 0;
-        let mut end_offset = self.len() - 1;
-
-        loop {
-            if start_offset >= self.len() {
-                break;
-            }
-            if self[start_offset] != b' '
-                && self[start_offset] != b'\t'
-                && self[start_offset] != b'\n'
-            {
-                break;
-            }
-            start_offset += 1;
-        }
-
-        loop {
-            if end_offset < 1 {
-                break;
-            }
-            if self[end_offset] == b' ' || self[end_offset] == b'\t' || self[end_offset] == b'\n' {
-                end_offset -= 1;
-                continue;
-            }
+    loop {
+        if start_offset >= input.len() {
             break;
         }
-        &self[start_offset..end_offset + 1]
+        if input[start_offset] != b' '
+            && input[start_offset] != b'\t'
+            && input[start_offset] != b'\n'
+        {
+            break;
+        }
+        start_offset += 1;
     }
+
+    loop {
+        if end_offset < 1 {
+            break;
+        }
+        if input[end_offset] == b' ' || input[end_offset] == b'\t' || input[end_offset] == b'\n' {
+            end_offset -= 1;
+            continue;
+        }
+        break;
+    }
+    &input[start_offset..end_offset + 1]
 }
 
 #[cfg(test)]
@@ -301,15 +382,57 @@ mod tests {
             Token::End,
             Token::CodeEnd,
         ];
+        let count = expected.len();
+        let mut real = 0;
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
             assert_eq!(t, b);
+            real += 1;
         });
+        assert_eq!(real, count);
     }
 
     #[test]
+    fn lex_extends() {
+        let tmpl = "{{ define 'base' extends 'test'}}";
+        let lexer = Lexer::new(tmpl.as_bytes());
+        let expected = vec![
+            Token::CodeStart,
+            Token::Define,
+            Token::Literal("base"),
+            Token::Extends,
+            Token::Literal("test"),
+            Token::CodeEnd,
+        ];
+        let mut timeout = 0;
+
+        println!("parsing : {}", &tmpl);
+        for token in lexer {
+            println!("{:?}", token);
+            timeout += 1;
+
+            if timeout > 100 {
+                println!("overflow!!!!");
+                break;
+            }
+        }
+
+        // let data = lexer.collect::<Vec<_>>();
+        //
+        // for token in &data {
+        //     println!("{:?}", token);
+        // }
+        //
+        // assert_eq!(data.len(), expected.len());
+
+        // lexer.zip(expected).for_each(|(a, b)| {
+        //     let (t, s) = a.unwrap();
+        //     println!("{:?}", t);
+        // });
+    }
+    #[test]
     fn lex_define_import_extend() {
-        let tmpl = "{{ define 'base' }}{{ import 'test' }}{{ extend 'test'}}";
+        let tmpl = "{{ define 'base' }}{{ import 'test' }}{{ define 'test' extends 'lol'}}";
         let lexer = Lexer::new(tmpl.as_bytes());
         let expected = vec![
             Token::CodeStart,
@@ -321,14 +444,20 @@ mod tests {
             Token::Literal("test"),
             Token::CodeEnd,
             Token::CodeStart,
-            Token::Extend,
+            Token::Define,
             Token::Literal("test"),
+            Token::Extends,
+            Token::Literal("lol"),
             Token::CodeEnd,
         ];
+        let count = expected.len();
+        let mut real = 0;
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
             assert_eq!(t, b);
+            real += 1;
         });
+        assert_eq!(real, count);
     }
 
     #[test]
@@ -347,10 +476,14 @@ mod tests {
             Token::End,
             Token::CodeEnd,
         ];
+        let count = expected.len();
+        let mut real = 0;
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
             assert_eq!(t, b);
-        })
+            real += 1;
+        });
+        assert_eq!(real, count);
     }
 
     #[test]
@@ -379,9 +512,14 @@ mod tests {
             Token::End,
             Token::CodeEnd,
         ];
+
+        let count = expected.len();
+        let mut real = 0;
         lexer.zip(expected).for_each(|(a, b)| {
             let (t, s) = a.unwrap();
             assert_eq!(t, b);
-        })
+            real += 1;
+        });
+        assert_eq!(real, count);
     }
 }
