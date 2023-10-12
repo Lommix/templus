@@ -125,24 +125,36 @@ impl<'a> Iterator for Lexer<'a> {
                 match &self.code[self.cursor] {
                     // string literal
                     b'"' | b'\'' => {
-                        let offset =
-                            offset_to_delimiter(&self.code[self.cursor..], self.code[self.cursor])
-                                .expect("EOF lol");
-                        let literal =
-                            std::str::from_utf8(&self.code[self.cursor..self.cursor + offset])
-                                .unwrap();
+                        let offset = match offset_to_delimiter(
+                            &self.code[self.cursor + 1..],
+                            self.code[self.cursor],
+                        ) {
+                            Some(offset) => offset,
+                            None => return Some(Err(TemplusError::LexerError(self.loc()))),
+                        };
 
-                        println!("literal: {:?}", literal);
-                        self.cursor += offset + 1;
+                        let literal = match std::str::from_utf8(
+                            &self.code[self.cursor + 1..self.cursor + offset + 1],
+                        ) {
+                            Ok(s) => s,
+                            Err(_) => return Some(Err(TemplusError::LexerError(self.loc()))),
+                        };
+
+                        self.cursor += offset + 2;
                         return Some(Ok((Token::Literal(literal), self.loc())));
                     }
                     // number literal
                     b'0'..=b'9' => {
-                        let offset =
-                            offset_to_number_end(&self.code[self.cursor..]).expect("EOF lol");
-                        let number =
-                            std::str::from_utf8(&self.code[self.cursor..self.cursor + offset])
-                                .unwrap();
+                        let offset = match offset_to_number_end(&self.code[self.cursor..]) {
+                            Some(offset) => offset,
+                            None => return Some(Err(TemplusError::LexerError(self.loc()))),
+                        };
+                        let number = match std::str::from_utf8(
+                            &self.code[self.cursor..self.cursor + offset],
+                        ) {
+                            Ok(s) => s,
+                            Err(_) => return Some(Err(TemplusError::LexerError(self.loc()))),
+                        };
                         self.cursor += offset;
                         return Some(Ok((Token::Literal(number), self.loc())));
                     }
@@ -150,86 +162,57 @@ impl<'a> Iterator for Lexer<'a> {
                     b'.' => {
                         self.cursor += 1;
                         let offset =
-                            offset_to_delimiter(&self.code[self.cursor..], b' ').expect("EOF lol");
-                        let ident =
-                            std::str::from_utf8(&self.code[self.cursor..self.cursor + offset])
-                                .unwrap();
+                            match offset_to_any_delimiter(&self.code[self.cursor..], &[b' ', b'}'])
+                            {
+                                Some(offset) => offset,
+                                None => return Some(Err(TemplusError::LexerError(self.loc()))),
+                            };
+                        let ident = match std::str::from_utf8(
+                            &self.code[self.cursor..self.cursor + offset],
+                        ) {
+                            Ok(s) => s,
+                            Err(_) => return Some(Err(TemplusError::LexerError(self.loc()))),
+                        };
                         self.cursor += offset;
                         return Some(Ok((Token::Var(ident), self.loc())));
                     }
                     // ident token
                     _ => {
                         let offset =
-                            offset_to_delimiter(&self.code[self.cursor..], b' ').expect("EOF lol");
+                            match offset_to_any_delimiter(&self.code[self.cursor..], &[b' ', b'}'])
+                            {
+                                Some(offset) => offset,
+                                None => return Some(Err(TemplusError::LexerError(self.loc()))),
+                            };
 
                         let ident = &self.code[self.cursor..self.cursor + offset];
                         self.cursor += offset;
-                        let token = Token::try_from_bslice(ident)
-                            .expect(&format!("failed at {:?}", std::str::from_utf8(ident)));
+                        let token = match Token::try_from_bslice(ident) {
+                            Some(token) => token,
+                            None => return Some(Err(TemplusError::LexerError(self.loc()))),
+                        };
                         return Some(Ok((token, self.loc())));
                     }
                 }
-
-                // // is var?
-                // if code_buffer.starts_with(".") {
-                //     let offset = code_buffer.find(' ').unwrap_or(code_buffer.len());
-                //     let var = &code_buffer[1..offset];
-                //     self.state = LexerState::InCode(code_buffer[offset..].trim());
-                //     return Some(Ok((Token::Var(var), self.loc())));
-                // }
-                //
-                // // string literal starting with '
-                // if code_buffer.starts_with("'") {
-                //     let offset = code_buffer[1..].find("'").unwrap_or(code_buffer.len());
-                //     let literal = &code_buffer[1..offset + 1];
-                //
-                //     self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
-                //     return Some(Ok((Token::Literal(&literal), self.loc())));
-                // }
-                //
-                // // string literal starting with "
-                // if code_buffer.starts_with('"') {
-                //     let offset = code_buffer[1..].find('"').unwrap_or(code_buffer.len());
-                //     let literal = &code_buffer[1..offset + 1];
-                //
-                //     self.state = LexerState::InCode(code_buffer[offset + 2..].trim());
-                //     return Some(Ok((Token::Literal(&literal), self.loc())));
-                // }
-                //
-                // // number literals, no floats
-                // if let Some((num, rest)) = split_after_numeric(code_buffer) {
-                //     self.state = LexerState::InCode(rest.trim());
-                //     return Some(Ok((Token::Literal(&num), self.loc())));
-                // }
-                //
-                // //todo: refactor like top
-                // match code_buffer.split_once(' ') {
-                //     // handle expressions
-                //     // todo
-                //     Some((s, rest)) => {
-                //         self.state = LexerState::InCode(rest.trim());
-                //         let token = match Token::try_from_str(s) {
-                //             Some(token) => token,
-                //             None => panic!("failed at {}", s),
-                //         };
-                //         Some(Ok((token, self.loc())))
-                //     }
-                //     None => {
-                //         if code_buffer.len() > 0 {
-                //             let token = match Token::try_from_str(code_buffer) {
-                //                 Some(token) => token,
-                //                 None => Token::Var(code_buffer),
-                //             };
-                //             let span = self.loc();
-                //             self.state = LexerState::InCode("");
-                //             return Some(Ok((token, span)));
-                //         }
-                //         self.state = LexerState::InHtml;
-                //         Some(Ok((Token::CodeEnd, self.loc())))
-                //     }
-                // }
             }
         }
+    }
+}
+
+fn offset_to_any_delimiter(code: &[u8], delimiters: &[u8]) -> Option<usize> {
+    let mut offset = 0;
+    loop {
+        if offset >= code.len() {
+            return None;
+        }
+
+        for delimiter in delimiters {
+            if Some(delimiter) == code.get(offset) {
+                return Some(offset);
+            }
+        }
+
+        offset += 1;
     }
 }
 
@@ -404,31 +387,15 @@ mod tests {
             Token::Literal("test"),
             Token::CodeEnd,
         ];
-        let mut timeout = 0;
 
-        println!("parsing : {}", &tmpl);
-        for token in lexer {
-            println!("{:?}", token);
-            timeout += 1;
-
-            if timeout > 100 {
-                println!("overflow!!!!");
-                break;
-            }
-        }
-
-        // let data = lexer.collect::<Vec<_>>();
-        //
-        // for token in &data {
-        //     println!("{:?}", token);
-        // }
-        //
-        // assert_eq!(data.len(), expected.len());
-
-        // lexer.zip(expected).for_each(|(a, b)| {
-        //     let (t, s) = a.unwrap();
-        //     println!("{:?}", t);
-        // });
+        let count = expected.len();
+        let mut real = 0;
+        lexer.zip(expected).for_each(|(a, b)| {
+            let (t, s) = a.unwrap();
+            assert_eq!(t, b);
+            real += 1;
+        });
+        assert_eq!(real, count);
     }
     #[test]
     fn lex_define_import_extend() {

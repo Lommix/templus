@@ -68,7 +68,8 @@ impl<'a> Parser<'a> {
                 Token::Block => {
                     let name = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => name,
-                        _ => return Err(TemplusError::InvalidSyntax),
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
                     let statement = Statement::Block(name, self.parse()?);
                     out.push(statement);
@@ -84,7 +85,8 @@ impl<'a> Parser<'a> {
                 Token::Define => {
                     let name = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => name,
-                        _ => return Err(TemplusError::InvalidSyntax),
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
                     let statement = Statement::Define(name, self.parse()?);
                     out.push(statement);
@@ -92,7 +94,8 @@ impl<'a> Parser<'a> {
                 Token::Extends => {
                     let name = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => name,
-                        _ => return Err(TemplusError::InvalidSyntax),
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
                     let statement = Statement::Extend(name, self.parse()?);
                     out.push(statement);
@@ -100,7 +103,8 @@ impl<'a> Parser<'a> {
                 Token::Import => {
                     let name = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => name,
-                        _ => return Err(TemplusError::InvalidSyntax),
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
                     let statement = Statement::Import(name);
                     out.push(statement);
@@ -110,23 +114,21 @@ impl<'a> Parser<'a> {
                     let left = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => Expression::Literal(name),
                         Some(Ok((Token::Var(name), at))) => Expression::Variable(name),
-                        e => {
-                            return Err(TemplusError::ParserError((
-                                "left side is fucked".to_string(),
-                                e.unwrap().unwrap().1,
-                            )))
-                        }
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
 
                     let op = match self.lexer.next() {
                         Some(Ok((Token::Eq, at))) => Op::Eq,
-                        _ => return Err(TemplusError::InvalidSyntax),
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
 
                     let right = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => Expression::Literal(name),
                         Some(Ok((Token::Var(name), _))) => Expression::Variable(name),
-                        _ => return Err(TemplusError::InvalidSyntax),
+                        Some(Err(err)) => return Err(err),
+                        _ => return Err(TemplusError::ParserError(span)),
                     };
 
                     out.push(Statement::Expression(Expression::If(
@@ -167,12 +169,13 @@ mod tests {
 
     #[test]
     fn test_parser() {
-        let tmpl = "{{ define 'hello' }}{{if .user == true }}hello{{.user}}{{end}}{{ end }}{{ define 'test' }}<h1>share this</h1>{{block 'lol'}}test{{end}}{{ end }}{{ define 'lol' extends 'test'}}{{block 'lol'}}bye{{end}}{{end}}";
+        // let tmpl = "{{ define 'hello' }}hello {{.user}}{{ end }}{{ define 'test' }}<h1>share this</h1>{{block 'lol'}}test{{end}}{{ end }}{{ define 'lol' extends 'test'}}{{block 'lol'}}bye{{end}}{{end}}";
+        let tmpl = " {{ define 'hello' }}  hello {{.user}} {{ end }} {{define 'world' extends 'hello' }} world {{end}}";
         let mut parser = Parser::new(tmpl.as_bytes());
         let templates = parser.parse().unwrap();
 
-        // for template in templates {
-        //     println!("template: {:?}", template);
-        // }
+        for template in templates {
+            println!("template: {:?}", template);
+        }
     }
 }

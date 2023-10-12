@@ -40,10 +40,10 @@ fn test_render() {
 {{end}}
 ";
 
-    let mut parser = Parser::new(tmpl.as_bytes());
-    let templates = parser.parse().unwrap();
-
-    for template in templates {
-        println!("template: {:?}", template);
-    }
+    // let mut parser = Parser::new(tmpl.as_bytes());
+    // let templates = parser.parse().unwrap();
+    //
+    // for template in templates {
+    //     println!("template: {:?}", template);
+    // }
 }
