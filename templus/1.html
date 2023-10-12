@@ -3,18 +3,17 @@
 		<body>
 			{{ block 'content' }}
 			{{ end }}
+			{{ block 'js' }}
+				<script src="/js/test.js"></script>
+			{{ end }}
 		</body>
 	</html>
 {{ end }}
-
-
-{{ extend 'base' }}
+{{ define 'test' extends 'base' }}
 	{{ block 'content' }}
 		<h1>hello</h1>
 		{{ if .admin }}
 			<h1>admin</h1>
-		{{ else }}
-			<h1>guest</h1>
 		{{ end }}
 	{{ end }}
 {{ end }}

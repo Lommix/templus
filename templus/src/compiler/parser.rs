@@ -22,9 +22,10 @@ pub enum Statement<'a> {
 #[derive(Debug)]
 pub struct IfExpr<'a> {
     left: Box<Expression<'a>>,
-    right: Box<Expression<'a>>,
-    op: Op,
+    right: Option<Box<Expression<'a>>>,
+    op: Option<Op>,
 }
+
 
 #[derive(Debug)]
 pub enum BinOp {
@@ -118,28 +119,44 @@ impl<'a> Parser<'a> {
                         _ => return Err(TemplusError::ParserError(span)),
                     };
 
-                    let op = match self.lexer.next() {
-                        Some(Ok((Token::Eq, at))) => Op::Eq,
-                        Some(Err(err)) => return Err(err),
-                        _ => return Err(TemplusError::ParserError(span)),
-                    };
+                    match self.lexer.next() {
+                        Some(Ok((Token::CodeEnd, _))) => {
+                            out.push(Statement::Expression(Expression::If(
+                                IfExpr {
+                                    left: Box::new(left),
+                                    right: None,
+                                    op: None,
+                                },
+                                self.parse()?,
+                            )))
+                        }
+                        _ => {
+                            let op = match self.lexer.next() {
+                                Some(Ok((Token::Eq, at))) => Op::Eq,
+                                Some(Err(err)) => return Err(err),
+                                _ => return Err(TemplusError::ParserError(span)),
+                            };
 
-                    let right = match self.lexer.next() {
-                        Some(Ok((Token::Literal(name), _))) => Expression::Literal(name),
-                        Some(Ok((Token::Var(name), _))) => Expression::Variable(name),
-                        Some(Err(err)) => return Err(err),
-                        _ => return Err(TemplusError::ParserError(span)),
-                    };
+                            let right = match self.lexer.next() {
+                                Some(Ok((Token::Literal(name), _))) => Expression::Literal(name),
+                                Some(Ok((Token::Var(name), _))) => Expression::Variable(name),
+                                Some(Err(err)) => return Err(err),
+                                _ => return Err(TemplusError::ParserError(span)),
+                            };
 
-                    out.push(Statement::Expression(Expression::If(
-                        IfExpr {
-                            left: Box::new(left),
-                            right: Box::new(right),
-                            op,
-                        },
-                        self.parse()?,
-                    )))
+                            out.push(Statement::Expression(Expression::If(
+                                IfExpr {
+                                    left: Box::new(left),
+                                    right: Some(Box::new(right)),
+                                    op: Some(op),
+                                },
+                                self.parse()?,
+                            )))
+                        }
+                    }
                 }
+                Token::True => todo!(),
+                Token::False => todo!(),
                 Token::Else => todo!(),
                 Token::End => return Ok(out),
                 Token::Set => todo!(),
@@ -169,11 +186,9 @@ mod tests {
 
     #[test]
     fn test_parser() {
-        // let tmpl = "{{ define 'hello' }}hello {{.user}}{{ end }}{{ define 'test' }}<h1>share this</h1>{{block 'lol'}}test{{end}}{{ end }}{{ define 'lol' extends 'test'}}{{block 'lol'}}bye{{end}}{{end}}";
-        let tmpl = " {{ define 'hello' }}  hello {{.user}} {{ end }} {{define 'world' extends 'hello' }} world {{end}}";
+        let tmpl = std::fs::read_to_string("1.html").unwrap();
         let mut parser = Parser::new(tmpl.as_bytes());
         let templates = parser.parse().unwrap();
-
         for template in templates {
             println!("template: {:?}", template);
         }

@@ -32,6 +32,7 @@ impl<'a> Lexer<'a> {
     pub fn new(code: &'a [u8]) -> Self {
         Self {
             code,
+            line_cursor : 1,
             ..Default::default()
         }
     }
@@ -67,6 +68,10 @@ impl<'a> Iterator for Lexer<'a> {
         }
         match self.state {
             LexerState::InHtml => {
+                self.skip_whitespace();
+                if self.cursor >= self.code.len() {
+                    return None;
+                }
                 // find the next punctuation
                 let (start, lines_passed) = match next_block_start(&self.code[self.cursor..]) {
                     Some((offset, lines)) => (offset, lines),
@@ -79,9 +84,7 @@ impl<'a> Iterator for Lexer<'a> {
                         return Some(Ok((token, span)));
                     }
                 };
-
                 self.line_cursor += lines_passed;
-
                 // we found html
                 // is it all whitespace?
                 if start > 0 {
@@ -99,15 +102,8 @@ impl<'a> Iterator for Lexer<'a> {
                 // we are at the start of a code block
                 // skip block start
                 self.cursor += 2;
-
-                let code = &self.code[self.cursor..];
-                let block_start_span = self.loc();
-
-                // self.line_cursor += lines_passed;
-                // self.cursor += end + 2;
-
                 self.state = LexerState::InCode;
-                Some(Ok((Token::CodeStart, block_start_span)))
+                Some(Ok((Token::CodeStart, self.loc())))
             }
             LexerState::InCode => {
                 self.skip_whitespace();

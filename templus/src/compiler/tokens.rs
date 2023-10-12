@@ -14,6 +14,8 @@ pub(crate) enum Token<'a> {
     End,
     Set,
 
+    True,
+    False,
     Eq,         // ==
     Neq,        // !=
     Gte,        // >=
@@ -28,30 +30,6 @@ pub(crate) enum Token<'a> {
 }
 
 impl<'a> Token<'a> {
-    pub fn try_from_str(str: &'a str) -> Option<Self> {
-        match str {
-            "define" => Some(Token::Define),
-            "extends" => Some(Token::Extends),
-            "block" => Some(Token::Block),
-            "import" => Some(Token::Import),
-            "range" => Some(Token::Range),
-            "else" => Some(Token::Else),
-            "if" => Some(Token::If),
-            "end" => Some(Token::End),
-            "set" => Some(Token::Set),
-            "=" => Some(Token::Assign),
-            "==" => Some(Token::Eq),
-            "!=" => Some(Token::Neq),
-            ">=" => Some(Token::Gte),
-            ">" => Some(Token::Gt),
-            "<=" => Some(Token::Lte),
-            "<" => Some(Token::Lt),
-            "&&" => Some(Token::And),
-            "||" => Some(Token::Or),
-            _ => None,
-        }
-    }
-
     pub fn try_from_bslice(bslice: &'a [u8]) -> Option<Self> {
         match bslice {
             b"define" => Some(Token::Define),
@@ -71,6 +49,8 @@ impl<'a> Token<'a> {
             b"<=" => Some(Token::Lte),
             b"<" => Some(Token::Lt),
             b"&&" => Some(Token::And),
+            b"true" => Some(Token::False),
+            b"false" => Some(Token::True),
             b"||" => Some(Token::Or),
             _ => None,
         }
