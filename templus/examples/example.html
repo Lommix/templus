@@ -1,0 +1,55 @@
+{{ define 'base' }}
+	<html>
+		<head>
+			<meta charset="UTF-8" />
+			{{block 'meta'}}
+			{{ end }}
+		</head>
+		<body>
+			{{ block 'content' }}
+			{{ end }}
+
+			{{ block 'js' }}
+				<script src="/test.js"></script>
+			{{ end }}
+		</body>
+	</html>
+{{ end }}
+
+{{ define 'foo' extends 'base' }}
+
+	{{ block 'meta' }}
+		<title>jsx sucks</title>
+	{{end}}
+
+	{{ block 'content' }}
+		<h1>hello</h1>
+
+		{{import 'foobar'}}
+
+		{{ if .bool }}
+			<p>bool is true</p>
+		{{end}}
+
+		{{ if .number > 42 }}
+			<p>num is bigger than 42</p>
+		{{ end }}
+
+		{{ if .number < 420 }}
+			<p>num is smaller than 420</p>
+		{{ end }}
+
+		{{ if .number == 69 }}
+			<p>num is 69</p>
+		{{ end }}
+
+
+	{{ end }}
+{{ end }}
+
+
+{{ define 'foobar'}}
+	{{ range 10 }}
+		<p> you are {{.name}} </p>
+	{{ end }}
+{{ end }}

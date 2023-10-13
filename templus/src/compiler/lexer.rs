@@ -262,41 +262,8 @@ fn next_block_start(code: &[u8]) -> Option<(usize, usize)> {
     }
 }
 
-fn next_block_end(code: &[u8]) -> Option<(usize, usize)> {
-    let mut local_offset = 0;
-    let mut lines_passed = 0;
-    loop {
-        if local_offset >= code.len() {
-            return None;
-        }
-        match code.get(local_offset..local_offset + 2) {
-            Some(b"}}") => return Some((local_offset, lines_passed)),
-            _ => local_offset += 1,
-        }
-        if let Some(b'\n') = code.get(local_offset) {
-            lines_passed += 1;
-        }
-    }
-}
-
 fn is_whitespace_only(code: &[u8]) -> bool {
     code.iter().all(|&x| x == b' ' || x == b'\t' || x == b'\n')
-}
-
-fn split_after_numeric(code: &str) -> Option<(&str, &str)> {
-    let mut offset = 0;
-    //get first char
-    if !code.chars().nth(0)?.is_numeric() {
-        return None;
-    }
-
-    while let Some(c) = code.chars().nth(offset) {
-        if !c.is_numeric() {
-            break;
-        }
-        offset += 1;
-    }
-    Some(code.split_at(offset))
 }
 
 fn btrim(input: &[u8]) -> &[u8] {
@@ -335,17 +302,6 @@ fn btrim(input: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn lex_num_split() {
-        let code = "123fsd fdsf";
-        let (a, b) = split_after_numeric(code).unwrap();
-        assert_eq!(a, "123");
-        assert_eq!(b, "fsd fdsf");
-
-        let code = "sdf hello wotld";
-        assert!(split_after_numeric(code).is_none());
-    }
 
     #[test]
     fn lex_if() {

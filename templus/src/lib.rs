@@ -1,4 +1,3 @@
 #[allow(unused_variables)]
-#[allow(dead_code)]
-mod compiler;
-mod renderer;
+pub mod compiler;
+pub mod renderer;

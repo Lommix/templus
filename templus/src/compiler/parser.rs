@@ -122,7 +122,6 @@ impl<'a> IfExpr<'a> {
     }
 
     fn eval_number(left: i64, op: &Op, right: &serde_json::Value) -> Result<bool, TemplusError> {
-        println!("{:?}", right.as_i64());
         let num = match right {
             serde_json::Value::Number(num) => num.as_i64().unwrap(),
             _ => {
@@ -374,10 +373,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-#[derive(Debug)]
-pub struct PtreeNode {
-    children: Vec<PtreeNode>,
-}
 
 #[cfg(test)]
 mod tests {

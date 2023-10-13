@@ -1,4 +1,4 @@
-# Templus [Wip]
+# Templus
 
 ### Go inspired template engine/compiler for Rust.
 
@@ -9,93 +9,86 @@ With proper inheritance, composition and caching.
 Recently, I had the opportunity to develop a small web app in Go utilizing solely the standard libraries.
 It is truly remarkable how comprehensive the Go standard library ecosystem is and how far you get with no dependencies at all.
 
-The only part that really annoyed me were the templates. The syntax is fine, but the fact that I cannot parse all my templates at once,
-cache the parse tree and then only render specific blocks while having inheritance and composition working sucks!
-Importing stuff more than once, results in overwrites. Inheriting a template can only be done once.
-Go forces you to parse all required templates for each page in separate object or do it on each request again.
+The template behavior was the only truly frustrating aspect for me.
+The syntax is acceptable, but the inability to parse all my templates simultaneously, cache the parse tree, and then render specific blocks while maintaining inheritance and composition is disappointing.
+Importing items multiple times results in overwrites, and a template can only be inherited once. Go necessitates parsing all required templates for each page in a separate object or reprocessing them with each request.
 
-As a challenge and because I always wanted to write a parse tree myself with minimal dependencies, I started this project.
-Beware it is still work in progress and some features likes user defined functions are missing.
+To challenge myself I implemented my own Go inspired template engine in rust with `serde` being the only dependency.
+Syntax is basically the same, but with proper `if` statements, inheritance, and composition.
 
-Syntax is basically go template syntax, but with proper if statements and more verbose block types.
+This is work in progress and will probably be used and iterated on in my next small web project.
 
-
-## Loading Templates
-you just pass in a template string into an environment struct.
-```rust
-let tmpl = &std::fs::read_to_string("template_file.html").unwrap();
-let mut env = Environment::new();
-env.parse(tmpl).unwrap();
-
-let ctx = Ctx {
-    admin: true,
-    name: "lommix".to_string(),
-};
-
-let html = env.render("foo", &serde_json::to_value(ctx).unwrap());
+```bash
+cargo run --example render
 ```
 
-## Example templates
+## Basic Example
 
-Files don't matter. Templates have to be defined inside a block.
-You can have as many define blocks in one file as you want
+Templates are defined by blocks. You can have as many as you want in one file.
+Beware. There is very little cloning, the template container is bound to the lifetime of the template source.
 
+```rust
+let tmpl = std::fs::read_to_string("templus/examples/example.html").expect("cannot read file");
+
+let mut envirement = templus::renderer::Envirement::new();
+envirement.parse(&tmpl).unwrap();
+
+let ctx = Context {
+    name: "lommix".to_string(),
+    number: 69,
+    bool: true,
+};
+
+let html = envirement
+    .render("foo", &serde_json::to_value(ctx).unwrap())
+    .unwrap();
+print!("{}", html);
+```
+
+Sample template code:
 ```html
 {{ define 'base' }}
 <html>
     <head>
-    <meta charset="UTF-8" />
-    {{block 'meta'}} {{ end }}
+        <meta charset="UTF-8" />
+        {{block 'meta'}}
+        {{ end }}
     </head>
     <body>
-        {{ block 'content' }} {{import 'foobar'}} {{ end }}
-        {{ block 'js' }} <script src="/test.js"></script> {{ end }}
+        {{ block 'content' }}
+        {{ end }}
+        {{ block 'js' }}
+            <script src="/test.js"></script>
+        {{ end }}
     </body>
 </html>
 {{ end }}
-```
 
-In contrast to Go, you can also extend defined blocks and overwrite certain parts.
-
-```html
 {{ define 'foo' extends 'base' }}
     {{ block 'meta' }}
-    <title>jsx sucks</title>
+        <title>jsx sucks</title>
     {{end}}
     {{ block 'content' }}
         <h1>hello</h1>
-        {{ if .admin }}
-            <h1>admin is logged in</h1>
+        {{import 'foobar'}}
+        {{ if .bool }}
+            <p>bool is true</p>
+        {{end}}
+        {{ if .number > 42 }}
+            <p>num is bigger than 42</p>
+        {{ end }}
+        {{ if .number < 420 }}
+            <p>num is smaller than 420</p>
+        {{ end }}
+        {{ if .number == 69 }}
+            <p>num is 69</p>
         {{ end }}
     {{ end }}
 {{ end }}
-```
 
-There is also composition.
-
-```html
-{{ define 'bar' extends 'base' }}
-    {{ block 'meta' }} <title>tsx aswell</title> {{end}}
-    {{ block 'content' }}
-        {{ import 'greet' }}
-    {{end}}
-{{ end }}
-
-{{ define 'greet' }}
-    <p> Welcome, {{ .user }} </p>
-{{ end }}
-```
-
-For logic, we currently have a loop with `range` and conditions with `if`
-
-```html
-{{ define 'jscopium'}}
-    {{ if .copium > 420 }}
-        <ul>
-        {{ range .users }}
-            <li>{{.name}} is believing</li>
-        {{ end }}
-        </ul>
+{{ define 'foobar'}}
+    {{ range 10 }}
+        <p> you are {{.name}} </p>
     {{ end }}
 {{ end }}
 ```
@@ -104,7 +97,7 @@ For logic, we currently have a loop with `range` and conditions with `if`
 
 - Variable assignments.
 - Binary operators in if statements.
+- else
 - User defined functions.
 - Bindings for other languages.
-- Better Errors when rendering.
-- Cli Tools and Parse Tree Binary serialization.
+- Cli Tools and Parse Tree serialization.
