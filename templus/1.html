@@ -1,13 +1,18 @@
 {{ define 'base' }}
 	<html>
+		<head>
+			<meta charset="UTF-8" />
+			{{block 'meta'}}
+			{{ end }}
+		</head>
 		<body>
 			{{ block 'content' }}
 				{{import 'foobar'}}
 			{{ end }}
-			{{ block 'js' }}
-				<script src="/js/test.js"></script>
-			{{ end }}
 
+			{{ block 'js' }}
+				<script src="/test.js"></script>
+			{{ end }}
 		</body>
 	</html>
 {{ end }}
@@ -15,25 +20,46 @@
 
 
 {{ define 'foo' extends 'base' }}
+
+	{{ block 'meta' }}
+		<title>jsx sucks</title>
+	{{end}}
+
 	{{ block 'content' }}
 		<h1>hello</h1>
+
+		{{import 'barfoo'}}
+
 		{{ if .admin }}
 			<h1>admin is logged in</h1>
 		{{ end }}
+
 	{{ end }}
+
 {{ end }}
 
 
 {{ define 'bar' extends 'base' }}
+
+	{{ block 'meta' }}
+		<title>tsx aswell</title>
+	{{end}}
+
 	{{ block 'content' }}
 		<h1>hello</h1>
-		{{ range .users }}
-			<h1>{{.name}}</h1>
+		{{ range 100 }}
+			<h1>Hello World</h1>
 		{{ end }}
 	{{ end }}
+
 {{ end }}
 
 
 {{ define 'foobar'}}
 	<p> i am a snippet </p>
+{{ end }}
+
+
+{{ define 'barfoo'}}
+	<p> another snippet </p>
 {{ end }}
