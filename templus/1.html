@@ -2,22 +2,17 @@
 	<html>
 		<body>
 			{{ block 'content' }}
-
-				{{ if .admin }}
-					<h1>admin</h1>
-				{{ end }}
-
-				{{ range 100 }}
-					{{.name}}
-				{{ end }}
-
+				{{import 'foobar'}}
 			{{ end }}
 			{{ block 'js' }}
 				<script src="/js/test.js"></script>
 			{{ end }}
+
 		</body>
 	</html>
 {{ end }}
+
+
 
 {{ define 'foo' extends 'base' }}
 	{{ block 'content' }}
@@ -28,6 +23,7 @@
 	{{ end }}
 {{ end }}
 
+
 {{ define 'bar' extends 'base' }}
 	{{ block 'content' }}
 		<h1>hello</h1>
@@ -35,4 +31,9 @@
 			<h1>{{.name}}</h1>
 		{{ end }}
 	{{ end }}
+{{ end }}
+
+
+{{ define 'foobar'}}
+	<p> i am a snippet </p>
 {{ end }}

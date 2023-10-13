@@ -2,8 +2,8 @@ use super::lexer::Span;
 
 #[derive(Debug)]
 pub enum TemplusError {
-    DeafultError(&'static str),
-    SyntaxError((&'static str, Span)),
+    DeafultError(String),
+    SyntaxError((String, Span)),
     ParserError(Span),
     LexerError(Span),
 }

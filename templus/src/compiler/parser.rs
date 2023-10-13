@@ -14,8 +14,7 @@ pub enum Expression<'a> {
 pub enum Statement<'a> {
     Expression(Expression<'a>),
     Block(&'a str, Vec<Statement<'a>>),
-    Define(&'a str, Vec<Statement<'a>>),
-    Extend(&'a str, Vec<Statement<'a>>),
+    Define(&'a str, Option<&'a str>, Vec<Statement<'a>>),
     Import(&'a str), // vars?
 }
 
@@ -53,9 +52,11 @@ impl<'a> IfExpr<'a> {
                     Some(v) => match v {
                         serde_json::Value::Null => Ok(false),
                         serde_json::Value::Bool(_v) => Ok(_v.clone()),
-                        serde_json::Value::Number(_v) => Ok(_v.as_i64().ok_or(
-                            TemplusError::DeafultError("serde maria, what have you done?"),
-                        )? != 0),
+                        serde_json::Value::Number(_v) => {
+                            Ok(_v.as_i64().ok_or(TemplusError::DeafultError(
+                                "serde maria, what have you done?".to_owned(),
+                            ))? != 0)
+                        }
                         serde_json::Value::String(_v) => Ok(_v.len() > 0),
                         serde_json::Value::Array(_v) => Ok(_v.len() > 0),
                         serde_json::Value::Object(_v) => Ok(true),
@@ -65,7 +66,7 @@ impl<'a> IfExpr<'a> {
                 Expression::Literal(_) => Ok(true),
                 _ => {
                     return Err(TemplusError::DeafultError(
-                        "wtf are you doing in you if statement",
+                        "wtf are you doing in you if statement".to_owned(),
                     ))
                 }
             },
@@ -84,15 +85,8 @@ impl<'a> std::fmt::Display for Statement<'a> {
                 }
                 write!(f, "\n")
             }
-            Statement::Define(name, statements) => {
+            Statement::Define(name, _, statements) => {
                 write!(f, "(define:{})", name)?;
-                for stat in statements {
-                    write!(f, "{}", stat)?;
-                }
-                write!(f, "\n")
-            }
-            Statement::Extend(name, statements) => {
-                write!(f, "(extends:{})", name)?;
                 for stat in statements {
                     write!(f, "{}", stat)?;
                 }
@@ -163,17 +157,23 @@ impl<'a> Parser<'a> {
                         Some(Err(err)) => return Err(err),
                         _ => return Err(TemplusError::ParserError(span)),
                     };
-                    let statement = Statement::Define(name, self.parse()?);
-                    out.push(statement);
-                }
-                Token::Extends => {
-                    let name = match self.lexer.next() {
-                        Some(Ok((Token::Literal(name), _))) => name,
-                        Some(Err(err)) => return Err(err),
-                        _ => return Err(TemplusError::ParserError(span)),
-                    };
-                    let statement = Statement::Extend(name, self.parse()?);
-                    out.push(statement);
+
+                    match self.lexer.next() {
+                        Some(Ok((Token::Extends, _))) => {
+                            match self.lexer.next() {
+                                Some(Ok((Token::Literal(extends), _))) => {
+                                    let statement =
+                                        Statement::Define(name, Some(extends), self.parse()?);
+                                    out.push(statement);
+                                }
+                                _ => {}
+                            };
+                        }
+                        _ => {
+                            let statement = Statement::Define(name, None, self.parse()?);
+                            out.push(statement);
+                        }
+                    }
                 }
                 Token::Import => {
                     let name = match self.lexer.next() {
@@ -188,7 +188,12 @@ impl<'a> Parser<'a> {
                     let var = match self.lexer.next() {
                         Some(Ok((Token::Var(var), _))) => Expression::Variable(var),
                         Some(Ok((Token::Literal(lit), _))) => Expression::Literal(lit),
-                        _ => return Err(TemplusError::SyntaxError(("expected var", span))),
+                        _ => {
+                            return Err(TemplusError::SyntaxError((
+                                "expected var".to_owned(),
+                                span,
+                            )))
+                        }
                     };
                     let statement =
                         Statement::Expression(Expression::Range(Box::new(var), self.parse()?));
@@ -239,17 +244,12 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Token::End => return Ok(out),
-                Token::Else => todo!(),
-                Token::Set => todo!(),
-                Token::Eq => todo!(),
-                Token::Neq => todo!(),
-                Token::Gte => todo!(),
-                Token::Gt => todo!(),
-                Token::Lte => todo!(),
-                Token::Lt => todo!(),
-                Token::And => todo!(),
-                Token::Or => todo!(),
-                Token::Assign => todo!(),
+                _any => {
+                    return Err(TemplusError::DeafultError(format!(
+                        "this token is supposed to be be here: {:?}",
+                        _any
+                    )))
+                }
             }
         }
         Ok(out)
