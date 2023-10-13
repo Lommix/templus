@@ -4,7 +4,6 @@ use super::{error::TemplusError, tokens::Token};
 pub struct Span {
     current_line: usize,
     current_column: usize,
-    current_offset: usize,
 }
 
 impl std::fmt::Display for Span {
@@ -25,6 +24,7 @@ pub(crate) struct Lexer<'a> {
     code: &'a [u8],
     cursor: usize,
     line_cursor: usize,
+    column_cursor: usize,
     state: LexerState,
 }
 
@@ -32,30 +32,34 @@ impl<'a> Lexer<'a> {
     pub fn new(code: &'a [u8]) -> Self {
         Self {
             code,
-            line_cursor : 1,
+            line_cursor: 1,
             ..Default::default()
         }
     }
 
-    pub fn skip_whitespace(&mut self) {
+    fn skip_whitespace(&mut self) {
         while self.cursor < self.code.len()
             && (self.code[self.cursor].is_ascii_whitespace()
                 || self.code[self.cursor].is_ascii_control())
         {
-            self.line_cursor += if self.code[self.cursor] == b'\n' {
-                1
-            } else {
-                0
-            };
+            if self.code[self.cursor] == b'\n' {
+                self.line_cursor += 1;
+                self.column_cursor = 0;
+            }
+
             self.cursor += 1;
         }
+    }
+
+    fn advance(&mut self, bytes: usize) {
+        self.cursor += bytes;
+        self.column_cursor += bytes;
     }
 
     fn loc(&self) -> Span {
         Span {
             current_line: self.line_cursor,
-            current_column: self.cursor - self.line_cursor,
-            current_offset: self.cursor,
+            current_column: self.column_cursor,
         }
     }
 }
@@ -89,19 +93,19 @@ impl<'a> Iterator for Lexer<'a> {
                 // is it all whitespace?
                 if start > 0 {
                     if is_whitespace_only(&self.code[self.cursor..self.cursor + start]) {
-                        self.cursor += start;
+                        self.advance(start);
                     } else {
                         let code = btrim(&self.code[self.cursor..self.cursor + start]);
                         let token = Token::Template(std::str::from_utf8(code).unwrap());
                         let span = self.loc();
-                        self.cursor += start;
+                        self.advance(start);
                         return Some(Ok((token, span)));
                     }
                 }
 
                 // we are at the start of a code block
                 // skip block start
-                self.cursor += 2;
+                self.advance(2);
                 self.state = LexerState::InCode;
                 Some(Ok((Token::CodeStart, self.loc())))
             }
@@ -114,7 +118,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                 if &self.code[self.cursor..self.cursor + 2] == b"}}" {
                     self.state = LexerState::InHtml;
-                    self.cursor += 2;
+                    self.advance(2);
                     return Some(Ok((Token::CodeEnd, self.loc())));
                 }
 
@@ -136,7 +140,7 @@ impl<'a> Iterator for Lexer<'a> {
                             Err(_) => return Some(Err(TemplusError::LexerError(self.loc()))),
                         };
 
-                        self.cursor += offset + 2;
+                        self.advance(offset + 2);
                         return Some(Ok((Token::Literal(literal), self.loc())));
                     }
                     // number literal
@@ -151,7 +155,7 @@ impl<'a> Iterator for Lexer<'a> {
                             Ok(s) => s,
                             Err(_) => return Some(Err(TemplusError::LexerError(self.loc()))),
                         };
-                        self.cursor += offset;
+                        self.advance(offset);
                         return Some(Ok((Token::Literal(number), self.loc())));
                     }
                     // var ident
@@ -169,7 +173,7 @@ impl<'a> Iterator for Lexer<'a> {
                             Ok(s) => s,
                             Err(_) => return Some(Err(TemplusError::LexerError(self.loc()))),
                         };
-                        self.cursor += offset;
+                        self.advance(offset);
                         return Some(Ok((Token::Var(ident), self.loc())));
                     }
                     // ident token
@@ -182,7 +186,7 @@ impl<'a> Iterator for Lexer<'a> {
                             };
 
                         let ident = &self.code[self.cursor..self.cursor + offset];
-                        self.cursor += offset;
+                        self.advance(offset);
                         let token = match Token::try_from_bslice(ident) {
                             Some(token) => token,
                             None => return Some(Err(TemplusError::LexerError(self.loc()))),
@@ -424,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn lex_range() {
+    fn lex_range_var() {
         let tmpl = "{{ range .users }}{{ .name }}{{ end }}";
         let lexer = Lexer::new(tmpl.as_bytes());
         let expected = vec![
@@ -437,6 +441,26 @@ mod tests {
             Token::CodeEnd,
             Token::CodeStart,
             Token::End,
+            Token::CodeEnd,
+        ];
+        let count = expected.len();
+        let mut real = 0;
+        lexer.zip(expected).for_each(|(a, b)| {
+            let (t, s) = a.unwrap();
+            assert_eq!(t, b);
+            real += 1;
+        });
+        assert_eq!(real, count);
+    }
+
+    #[test]
+    fn lex_range_lit() {
+        let tmpl = "{{ range 100 }}";
+        let lexer = Lexer::new(tmpl.as_bytes());
+        let expected = vec![
+            Token::CodeStart,
+            Token::Range,
+            Token::Literal("100"),
             Token::CodeEnd,
         ];
         let count = expected.len();

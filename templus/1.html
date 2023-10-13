@@ -2,6 +2,15 @@
 	<html>
 		<body>
 			{{ block 'content' }}
+
+				{{ if .admin }}
+					<h1>admin</h1>
+				{{ end }}
+
+				{{ range 100 }}
+					{{.name}}
+				{{ end }}
+
 			{{ end }}
 			{{ block 'js' }}
 				<script src="/js/test.js"></script>
@@ -9,11 +18,21 @@
 		</body>
 	</html>
 {{ end }}
-{{ define 'test' extends 'base' }}
+
+{{ define 'foo' extends 'base' }}
 	{{ block 'content' }}
 		<h1>hello</h1>
 		{{ if .admin }}
-			<h1>admin</h1>
+			<h1>admin is logged in</h1>
+		{{ end }}
+	{{ end }}
+{{ end }}
+
+{{ define 'bar' extends 'base' }}
+	{{ block 'content' }}
+		<h1>hello</h1>
+		{{ range .users }}
+			<h1>{{.name}}</h1>
 		{{ end }}
 	{{ end }}
 {{ end }}

@@ -14,8 +14,6 @@ pub(crate) enum Token<'a> {
     End,
     Set,
 
-    True,
-    False,
     Eq,         // ==
     Neq,        // !=
     Gte,        // >=
@@ -49,8 +47,6 @@ impl<'a> Token<'a> {
             b"<=" => Some(Token::Lte),
             b"<" => Some(Token::Lt),
             b"&&" => Some(Token::And),
-            b"true" => Some(Token::False),
-            b"false" => Some(Token::True),
             b"||" => Some(Token::Or),
             _ => None,
         }

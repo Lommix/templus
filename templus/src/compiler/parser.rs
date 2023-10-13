@@ -7,7 +7,7 @@ pub enum Expression<'a> {
     Variable(&'a str),
     Literal(&'a str),
     If(IfExpr<'a>, Vec<Statement<'a>>),
-    Range(&'a str, Box<Expression<'a>>, Vec<Statement<'a>>),
+    Range(Box<Expression<'a>>, Vec<Statement<'a>>),
 }
 
 #[derive(Debug)]
@@ -26,7 +26,6 @@ pub struct IfExpr<'a> {
     op: Option<Op>,
 }
 
-
 #[derive(Debug)]
 pub enum BinOp {
     And,
@@ -43,18 +42,93 @@ pub enum Op {
     Lte,
 }
 
-pub struct Parser<'a> {
-    lexer: Lexer<'a>,
-    current_node: Option<&'a mut Statement<'a>>,
+impl<'a> IfExpr<'a> {
+    pub fn eval(&self, ctx: &serde_json::Value) -> Result<bool, TemplusError> {
+        match &self.op {
+            Some(op) => {
+                todo!()
+            }
+            None => match *self.left {
+                Expression::Variable(var) => match ctx.get(var) {
+                    Some(v) => match v {
+                        serde_json::Value::Null => Ok(false),
+                        serde_json::Value::Bool(_v) => Ok(_v.clone()),
+                        serde_json::Value::Number(_v) => Ok(_v.as_i64().ok_or(
+                            TemplusError::DeafultError("serde maria, what have you done?"),
+                        )? != 0),
+                        serde_json::Value::String(_v) => Ok(_v.len() > 0),
+                        serde_json::Value::Array(_v) => Ok(_v.len() > 0),
+                        serde_json::Value::Object(_v) => Ok(true),
+                    },
+                    None => Ok(false),
+                },
+                Expression::Literal(_) => Ok(true),
+                _ => {
+                    return Err(TemplusError::DeafultError(
+                        "wtf are you doing in you if statement",
+                    ))
+                }
+            },
+        }
+    }
+}
+
+impl<'a> std::fmt::Display for Statement<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Expression(expr) => write!(f, "({})", expr),
+            Statement::Block(name, statements) => {
+                write!(f, "(block:{})", name)?;
+                for stat in statements {
+                    write!(f, "{}", stat)?;
+                }
+                write!(f, "\n")
+            }
+            Statement::Define(name, statements) => {
+                write!(f, "(define:{})", name)?;
+                for stat in statements {
+                    write!(f, "{}", stat)?;
+                }
+                write!(f, "\n")
+            }
+            Statement::Extend(name, statements) => {
+                write!(f, "(extends:{})", name)?;
+                for stat in statements {
+                    write!(f, "{}", stat)?;
+                }
+                write!(f, "\n")
+            }
+            Statement::Import(name) => write!(f, "(import:{})", name),
+        }
+    }
+}
+
+impl<'a> std::fmt::Display for Expression<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expression::Variable(_) => write!(f, "[var]"),
+            Expression::Literal(_) => write!(f, "[lit]"),
+            Expression::If(_, _) => write!(f, "[if]"),
+            Expression::Range(_, _) => write!(f, "[range]"),
+        }
+    }
+}
+
+impl<'a> std::fmt::Display for IfExpr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} {:?} {:?}\n", self.left, self.op, self.right)
+    }
 }
 
 // ---------------------------------------------
+pub struct Parser<'a> {
+    lexer: Lexer<'a>,
+}
 
 impl<'a> Parser<'a> {
     pub fn new(code: &'a [u8]) -> Self {
         Self {
             lexer: Lexer::new(code),
-            current_node: None,
         }
     }
 
@@ -65,7 +139,7 @@ impl<'a> Parser<'a> {
             let (token, span) = token_result?;
             match token {
                 Token::CodeStart => (), // don't care
-                Token::CodeEnd => (),   // dont't care
+                Token::CodeEnd => (),   // don't care
                 Token::Block => {
                     let name = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => name,
@@ -110,7 +184,16 @@ impl<'a> Parser<'a> {
                     let statement = Statement::Import(name);
                     out.push(statement);
                 }
-                Token::Range => todo!(),
+                Token::Range => {
+                    let var = match self.lexer.next() {
+                        Some(Ok((Token::Var(var), _))) => Expression::Variable(var),
+                        Some(Ok((Token::Literal(lit), _))) => Expression::Literal(lit),
+                        _ => return Err(TemplusError::SyntaxError(("expected var", span))),
+                    };
+                    let statement =
+                        Statement::Expression(Expression::Range(Box::new(var), self.parse()?));
+                    out.push(statement);
+                }
                 Token::If => {
                     let left = match self.lexer.next() {
                         Some(Ok((Token::Literal(name), _))) => Expression::Literal(name),
@@ -155,10 +238,8 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                Token::True => todo!(),
-                Token::False => todo!(),
-                Token::Else => todo!(),
                 Token::End => return Ok(out),
+                Token::Else => todo!(),
                 Token::Set => todo!(),
                 Token::Eq => todo!(),
                 Token::Neq => todo!(),
