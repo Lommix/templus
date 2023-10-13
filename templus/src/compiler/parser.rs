@@ -1,6 +1,5 @@
-use crate::compiler::tokens::Token;
-
 use super::{error::TemplusError, lexer::Lexer};
+use crate::compiler::tokens::Token;
 
 #[derive(Debug)]
 pub enum Expression<'a> {
@@ -44,9 +43,58 @@ pub enum Op {
 impl<'a> IfExpr<'a> {
     pub fn eval(&self, ctx: &serde_json::Value) -> Result<bool, TemplusError> {
         match &self.op {
-            Some(op) => {
-                todo!()
-            }
+            Some(op) => match *self.left {
+                Expression::Variable(var_name) => {
+                    let left_value = ctx
+                        .get(var_name)
+                        .ok_or(TemplusError::DeafultError("unknown var in if".to_owned()))?;
+
+                    let right_expr = self
+                        .right
+                        .as_ref()
+                        .ok_or(TemplusError::DeafultError("missing right".to_string()))?;
+
+                    let rigth_value = match **right_expr {
+                        Expression::Variable(name) => ctx
+                            .get(name)
+                            .ok_or(TemplusError::DeafultError("".to_string()))?
+                            .clone(),
+                        Expression::Literal(lit) => {
+                            let mut result = serde_json::Value::String(lit.to_string());
+                            // is number
+                            if let Ok(num) = lit.parse::<i64>() {
+                                result = serde_json::Value::Number(serde_json::Number::from(num))
+                            }
+                            // is bool
+                            if lit == "true" || lit == "false" {
+                                result = serde_json::Value::Bool(lit.parse::<bool>().unwrap())
+                            }
+                            result
+                        }
+                        _ => return Err(TemplusError::DeafultError("".to_string())),
+                    };
+
+                    match left_value {
+                        serde_json::Value::Null => {
+                            Err(TemplusError::DeafultError("null".to_string()))
+                        }
+                        serde_json::Value::Bool(bool) => IfExpr::eval_bool(bool, op, &rigth_value),
+                        serde_json::Value::Number(num) => {
+                            IfExpr::eval_number(num.as_i64().unwrap(), op, &rigth_value)
+                        }
+                        serde_json::Value::String(string) => {
+                            IfExpr::eval_string(string, op, &rigth_value)
+                        }
+                        serde_json::Value::Array(_) => Ok(false),
+                        serde_json::Value::Object(_) => Ok(false),
+                    }
+                }
+                _ => {
+                    return Err(TemplusError::DeafultError(
+                        "if statements require a variable on the left".to_owned(),
+                    ))
+                }
+            },
             None => match *self.left {
                 Expression::Variable(var) => match ctx.get(var) {
                     Some(v) => match v {
@@ -70,6 +118,66 @@ impl<'a> IfExpr<'a> {
                     ))
                 }
             },
+        }
+    }
+
+    fn eval_number(left: i64, op: &Op, right: &serde_json::Value) -> Result<bool, TemplusError> {
+        println!("{:?}", right.as_i64());
+        let num = match right {
+            serde_json::Value::Number(num) => num.as_i64().unwrap(),
+            _ => {
+                return Err(TemplusError::DeafultError(
+                    "camparing number to unknown".to_string(),
+                ))
+            }
+        };
+        match op {
+            Op::Eq => Ok(left == num),
+            Op::Neq => Ok(left != num),
+            Op::Gt => Ok(left > num),
+            Op::Gte => Ok(left >= num),
+            Op::Lt => Ok(left < num),
+            Op::Lte => Ok(left <= num),
+        }
+    }
+
+    fn eval_bool(left: &bool, op: &Op, right: &serde_json::Value) -> Result<bool, TemplusError> {
+        let bool = match right {
+            serde_json::Value::Bool(bool) => bool,
+            _ => {
+                return Err(TemplusError::DeafultError(
+                    "comparing bool with not bool".to_string(),
+                ))
+            }
+        };
+        match op {
+            Op::Eq => Ok(left == right),
+            Op::Neq => Ok(left != right),
+            _ => {
+                return Err(TemplusError::DeafultError(
+                    "bool campare can only be eq or neq".to_string(),
+                ))
+            }
+        }
+    }
+
+    fn eval_string(left: &str, op: &Op, right: &serde_json::Value) -> Result<bool, TemplusError> {
+        let string = match right {
+            serde_json::Value::String(string) => string,
+            _ => {
+                return Err(TemplusError::DeafultError(
+                    "comparing bool with not bool".to_string(),
+                ))
+            }
+        };
+        match op {
+            Op::Eq => Ok(left == right),
+            Op::Neq => Ok(left != right),
+            _ => {
+                return Err(TemplusError::DeafultError(
+                    "string campare can only be eq or neq".to_string(),
+                ))
+            }
         }
     }
 }
@@ -218,11 +326,21 @@ impl<'a> Parser<'a> {
                                 self.parse()?,
                             )))
                         }
-                        _ => {
-                            let op = match self.lexer.next() {
+                        _op => {
+                            let op = match _op {
                                 Some(Ok((Token::Eq, at))) => Op::Eq,
+                                Some(Ok((Token::Neq, at))) => Op::Neq,
+                                Some(Ok((Token::Gt, at))) => Op::Gt,
+                                Some(Ok((Token::Gte, at))) => Op::Gte,
+                                Some(Ok((Token::Lt, at))) => Op::Lt,
+                                Some(Ok((Token::Lte, at))) => Op::Lte,
                                 Some(Err(err)) => return Err(err),
-                                _ => return Err(TemplusError::ParserError(span)),
+                                _t => {
+                                    return Err(TemplusError::DeafultError(format!(
+                                        "error with {:?}",
+                                        _t
+                                    )))
+                                }
                             };
 
                             let right = match self.lexer.next() {

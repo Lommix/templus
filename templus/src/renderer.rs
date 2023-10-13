@@ -198,6 +198,7 @@ impl<'a> Envirement<'a> {
 struct Ctx {
     admin: bool,
     name: String,
+    num : i64,
 }
 
 #[cfg(test)]
@@ -212,6 +213,7 @@ mod test {
         let ctx = Ctx {
             admin: true,
             name: "lommix".to_string(),
+            num : 10,
         };
 
         let out = env.render("foo", &serde_json::to_value(ctx).unwrap());
