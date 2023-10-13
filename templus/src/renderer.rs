@@ -9,11 +9,11 @@ use crate::compiler::{
     parser::{Expression, Parser, Statement},
 };
 
-pub struct Envirement<'a> {
+pub struct Environment<'a> {
     pub templates: std::collections::HashMap<String, Statement<'a>>,
 }
 
-impl<'a> Envirement<'a> {
+impl<'a> Environment<'a> {
     pub fn new() -> Self {
         Self {
             templates: std::collections::HashMap::new(),
@@ -81,7 +81,7 @@ impl<'a> Envirement<'a> {
                                 "base template '{}' not found",
                                 extends_name
                             )))?;
-                    let over = Envirement::extract_blocks(stmts);
+                    let over = Environment::extract_blocks(stmts);
                     out += self.render_stmt(base_tmpl, ctx, Some(&over))?.as_str();
                 }
 
@@ -207,7 +207,7 @@ mod test {
     #[test]
     fn test_render() {
         let tmpl = &std::fs::read_to_string("1.html").unwrap();
-        let mut env = Envirement::new();
+        let mut env = Environment::new();
         env.parse(tmpl).unwrap();
 
         let ctx = Ctx {

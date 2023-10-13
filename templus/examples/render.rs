@@ -8,8 +8,8 @@ struct Context {
 fn main() {
     let tmpl = std::fs::read_to_string("templus/examples/example.html").expect("cannot read file");
 
-    let mut envirement = templus::renderer::Envirement::new();
-    envirement.parse(&tmpl).unwrap();
+    let mut environment = templus::renderer::Environment::new();
+    environment.parse(&tmpl).unwrap();
 
     let ctx = Context {
         name: "lommix".to_string(),
@@ -17,7 +17,7 @@ fn main() {
         bool: true,
     };
 
-    let html = envirement
+    let html = environment
         .render("foo", &serde_json::to_value(ctx).unwrap())
         .unwrap();
     print!("{}", html);
