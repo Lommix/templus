@@ -24,8 +24,9 @@ cargo run --example render
 
 ## Basic Example
 
-Templates are defined by blocks. You can have as many as you want in one file.
-Beware. There is very little cloning, the template container is bound to the lifetime of the template source.
+Templates are defined by blocks. You can have as many as you want in one file. Html outside define-blocks is ignored.
+There is very little cloning, the template container is bound to the lifetime of the template source. Only in the final
+render step, the Html gets copied to new Memory. This should make things pretty fast.
 
 ```rust
 let tmpl = std::fs::read_to_string("templus/examples/example.html").expect("cannot read file");
@@ -65,31 +66,43 @@ Sample template code:
 {{ end }}
 
 {{ define 'foo' extends 'base' }}
+
     {{ block 'meta' }}
         <title>jsx sucks</title>
     {{end}}
+
     {{ block 'content' }}
         <h1>hello</h1>
-        {{import 'foobar'}}
+
+        <div class="import-this">
+            {{ import 'foobar' }}
+        </div>
+
         {{ if .bool }}
             <p>bool is true</p>
         {{end}}
+
         {{ if .number > 42 }}
             <p>num is bigger than 42</p>
         {{ end }}
+
         {{ if .number < 420 }}
             <p>num is smaller than 420</p>
         {{ end }}
+
         {{ if .number == 69 }}
-            <p>num is 69</p>
+            <p>number is 69</p>
         {{ end }}
+
     {{ end }}
 {{ end }}
 
 {{ define 'foobar'}}
+    <ul class="loop-example">
     {{ range 10 }}
-        <p> you are {{.name}} </p>
+        <li> you are {{.name}} </li>
     {{ end }}
+    </ul>
 {{ end }}
 ```
 
@@ -97,7 +110,7 @@ Sample template code:
 
 - Variable assignments.
 - Binary operators in if statements.
-- else
+- implement `else`
 - User defined functions.
 - Bindings for other languages.
 - Cli Tools and Parse Tree serialization.
