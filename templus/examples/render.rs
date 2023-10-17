@@ -11,14 +11,16 @@ fn main() {
     let mut environment = templus::renderer::Environment::new();
     environment.parse(&tmpl).unwrap();
 
-    let ctx = Context {
-        name: "lommix".to_string(),
-        number: 69,
-        bool: true,
-    };
-
     let html = environment
-        .render("foo", &serde_json::to_value(ctx).unwrap())
+        .render(
+            "foo",
+            &templus::context! {
+                name => "lommix",
+                number => 69,
+                bool => true
+            },
+        )
         .unwrap();
+
     print!("{}", html);
 }

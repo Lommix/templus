@@ -34,15 +34,17 @@ let tmpl = std::fs::read_to_string("templus/examples/example.html").expect("cann
 let mut envirement = templus::renderer::Envirement::new();
 envirement.parse(&tmpl).unwrap();
 
-let ctx = Context {
-    name: "lommix".to_string(),
-    number: 69,
-    bool: true,
-};
-
-let html = envirement
-    .render("foo", &serde_json::to_value(ctx).unwrap())
+let html = environment
+    .render(
+        "foo",
+        &templus::context! {
+            name => "lommix",
+            number => 69,
+            bool => true
+        },
+    )
     .unwrap();
+
 print!("{}", html);
 ```
 
