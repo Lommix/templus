@@ -86,8 +86,10 @@ Sample template code:
             <p>num is bigger than 42</p>
         {{ end }}
 
-        {{ if .number < 420 }}
-            <p>num is smaller than 420</p>
+        {{ if .number < 42 }}
+            <p>num is smaller than 42</p>
+        {{ else }}
+            <p>num is not smaller than 42</p>
         {{ end }}
 
         {{ if .number == 69 }}
@@ -110,7 +112,6 @@ Sample template code:
 
 - Variable assignments.
 - Binary operators in if statements.
-- implement `else`
 - User defined functions.
 - Bindings for other languages.
 - Cli Tools and Parse Tree serialization.

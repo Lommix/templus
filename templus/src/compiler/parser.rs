@@ -5,7 +5,7 @@ use crate::compiler::tokens::Token;
 pub enum Expression<'a> {
     Variable(&'a str),
     Literal(&'a str),
-    If(IfExpr<'a>, Vec<Statement<'a>>),
+    If(IfExpr<'a>, Vec<Statement<'a>>, Vec<Statement<'a>>),
     Range(Box<Expression<'a>>, Vec<Statement<'a>>),
 }
 
@@ -209,7 +209,7 @@ impl<'a> std::fmt::Display for Expression<'a> {
         match self {
             Expression::Variable(_) => write!(f, "[var]"),
             Expression::Literal(_) => write!(f, "[lit]"),
-            Expression::If(_, _) => write!(f, "[if]"),
+            Expression::If(_, _, _) => write!(f, "[if]"),
             Expression::Range(_, _) => write!(f, "[range]"),
         }
     }
@@ -316,13 +316,23 @@ impl<'a> Parser<'a> {
 
                     match self.lexer.next() {
                         Some(Ok((Token::CodeEnd, _))) => {
+                            let mut if_body = self.parse()?;
+                            let (btrue, bfalse): (Vec<Statement<'_>>, Vec<Statement<'_>>) =
+                                match if_body.len() > 1 {
+                                    true => {
+                                        (if_body.drain(..1).collect(), if_body.drain(..).collect())
+                                    }
+                                    false => (if_body, vec![]),
+                                };
+
                             out.push(Statement::Expression(Expression::If(
                                 IfExpr {
                                     left: Box::new(left),
                                     right: None,
                                     op: None,
                                 },
-                                self.parse()?,
+                                btrue,
+                                bfalse,
                             )))
                         }
                         _op => {
@@ -349,17 +359,29 @@ impl<'a> Parser<'a> {
                                 _ => return Err(TemplusError::ParserError(span)),
                             };
 
+
+                            let mut if_body = self.parse()?;
+                            let (btrue, bfalse): (Vec<Statement<'_>>, Vec<Statement<'_>>) =
+                                match if_body.len() > 1 {
+                                    true => {
+                                        (if_body.drain(..1).collect(), if_body.drain(..).collect())
+                                    }
+                                    false => (if_body, vec![]),
+                                };
+
                             out.push(Statement::Expression(Expression::If(
                                 IfExpr {
                                     left: Box::new(left),
                                     right: Some(Box::new(right)),
                                     op: Some(op),
                                 },
-                                self.parse()?,
+                                btrue,
+                                bfalse,
                             )))
                         }
                     }
                 }
+                Token::Else => (),
                 Token::End => return Ok(out),
                 _any => {
                     return Err(TemplusError::DeafultError(format!(
@@ -372,7 +394,6 @@ impl<'a> Parser<'a> {
         Ok(out)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

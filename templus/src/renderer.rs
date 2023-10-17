@@ -141,9 +141,13 @@ impl<'a> Environment<'a> {
                     .ok_or(TemplusError::DeafultError("var not stringable".to_owned()))?
             }
             Expression::Literal(literal) => out += literal,
-            Expression::If(ifexpr, stmts) => {
+            Expression::If(ifexpr, stmts, else_stmts) => {
                 if ifexpr.eval(ctx)? {
                     for s in stmts {
+                        out += self.render_stmt(s, ctx, None)?.as_str();
+                    }
+                } else {
+                    for s in else_stmts {
                         out += self.render_stmt(s, ctx, None)?.as_str();
                     }
                 }
@@ -198,7 +202,7 @@ impl<'a> Environment<'a> {
 struct Ctx {
     admin: bool,
     name: String,
-    num : i64,
+    num: i64,
 }
 
 #[cfg(test)]
@@ -213,10 +217,28 @@ mod test {
         let ctx = Ctx {
             admin: true,
             name: "lommix".to_string(),
-            num : 10,
+            num: 10,
         };
 
         let out = env.render("foo", &serde_json::to_value(ctx).unwrap());
+        println!("---------------------------- OUTPUT:");
+        print!("{}\n", out.unwrap());
+        println!("----------------------------");
+    }
+
+    #[test]
+    fn test_render_if_else() {
+        let tmpl = &std::fs::read_to_string("2.html").unwrap();
+        let mut env = Environment::new();
+        env.parse(tmpl).unwrap();
+
+        let ctx = Ctx {
+            admin: true,
+            name: "lommix".to_string(),
+            num: 10,
+        };
+
+        let out = env.render("test", &serde_json::to_value(ctx).unwrap());
         println!("---------------------------- OUTPUT:");
         print!("{}\n", out.unwrap());
         println!("----------------------------");
